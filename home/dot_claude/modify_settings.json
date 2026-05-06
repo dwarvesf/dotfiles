@@ -23,6 +23,9 @@
 #   "BLOCKED: Pipe-to-shell detected"            -- block curl|wget | bash/sh/zsh
 #   "BLOCKED: Destructive delete"                -- block rm -rf /|~|$HOME
 #
+# Managed SessionStart hooks (keyed by unique marker):
+#   "machine-banner.sh"                          -- prints "Machine: user@host (model)"
+#
 # Note: `git push` to main/master/production is intentionally only a warning,
 # not a block. Solo workflow -- PR gating is not needed here.
 # The dedup list still strips any previously installed block hook on apply.
@@ -95,6 +98,11 @@ echo "$INPUT" | jq \
                 {matcher: "Bash", hooks: [{type: "command", command: $git_push_warn_cmd}]},
                 {matcher: "Bash", hooks: [{type: "command", command: $rm_rf_block_cmd}]}
             ]
+        ),
+        SessionStart: (
+            ((.hooks.SessionStart // []) | map(select(
+                (.hooks // []) | map(.command // "" | contains("machine-banner.sh")) | any | not
+            ))) + [{hooks: [{type: "command", command: "~/.claude/hooks/machine-banner/machine-banner.sh", timeout: 3}]}]
         )
     })
 '

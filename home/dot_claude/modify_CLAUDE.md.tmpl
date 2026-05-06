@@ -46,6 +46,19 @@ printf '%s\n' "$PREFIX"
 
 cat <<'MARKDOWN'
 
+# Machines I work from
+
+The SessionStart hook prints `Machine: <user>@<localhostname> (<hw.model>)` so you always know which box you landed on. This table maps shorthand the user uses verbally to actual SSH targets.
+
+| Shorthand | Hostname / SSH alias | User | Role |
+|---|---|---|---|
+| air | mac-air (Hans-Air-M4) | tieubao | daily driver, Da Nang. MacBook Air M4. |
+| mini, mac-mini-danang | `ssh mini` (Tailscale) / `ssh mini-lan` (mDNS fallback) | server (prod), tieubao (dev) | always-on home server, Mac Mini M4 Pro 64GB. Hosts ops-agent (`foundation.d.hermes-agent` LaunchDaemon) + Ollama. Project at `/Users/server/dev/hermes-agent`. |
+| egress-tokyo, trading-egress-tokyo | `ssh trading-egress-tokyo` | server | Vultr Tokyo VPS, trading egress. |
+| egress | `ssh egress` (see `~/.ssh/config.d/egress.local`) | server | egress relay. |
+
+Resolution rule: when the user says "the mini" / "mac mini" → ssh `mini`, never act locally. When they say "this machine" / "here" → use whatever the SessionStart banner shows. If the banner contradicts the user's framing, surface the conflict before acting.
+
 # Tool selection
 
 Durable rule for Claude Code. Applies to every session. Default to acting. Only ask when escalation triggers fire (see bottom).
