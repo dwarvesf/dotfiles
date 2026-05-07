@@ -1,5 +1,16 @@
 # 2026-05 mini SA token seed (S-51 rollout)
 
+> **Status (2026-05-07): partially valid.** Steps 1-4 work as written and
+> successfully seed the SA token into the Mini's login Keychain. **Step 5**
+> (the cross-machine smoke test) fails in practice when the SSH client is
+> iOS mosh (and likely any SSH transport): the 1Password CLI integration
+> popup still appears on the Mini's screen because macOS keychain unlock
+> state does not propagate from the console GUI session to SSH/mosh
+> Security Sessions. **Step 6** (auto-login) does not fix this either.
+> Use this runbook for the seed itself; do not treat the green Step-5
+> outcome as reachable until the follow-up fix lands. See
+> [S-51 errata 2026-05-07](../specs/S-51-multi-machine-sa-access.md#errata-2026-05-07).
+
 Operations runbook to seed `OP_SERVICE_ACCOUNT_TOKEN` into the Mac Mini's
 login Keychain and bring [S-51](../specs/S-51-multi-machine-sa-access.md)
 online end-to-end.
@@ -104,6 +115,17 @@ If that prints `SERVICE_ACCOUNT` with no popup, S-51 is fully validated
 end-to-end and PR #76 is safe to merge.
 
 ## Step 6 — Optional: persist the unlock across reboots
+
+> **Note (2026-05-07):** Empirical testing showed that auto-login does
+> **not** make the SA cache readable from SSH/mosh sessions even when the
+> Mini's GUI is logged in continuously. macOS holds keychain unlock state
+> per Security Session, not per user; SSH and mosh sessions create their
+> own Security Session distinct from the console GUI session, and that
+> session's view of the login keychain is locked. The "if you skip this,
+> log into the GUI" guidance below is therefore **not** sufficient to
+> deliver no-popup SSH access. See
+> [S-51 errata 2026-05-07](../specs/S-51-multi-machine-sa-access.md#errata-2026-05-07).
+> The Step-6 guidance below is preserved for historical accuracy.
 
 The seeded entry survives reboots, but the login keychain locks at boot
 until something unlocks it. SSH key auth doesn't unlock it; only a GUI

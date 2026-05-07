@@ -6,6 +6,92 @@ context.
 
 ---
 
+## [2026-05-07] S-51 SSH/mosh smoke-test failure traced to Security Session model @ Mac-mini
+
+Ran [`docs/operations/2026-05-mini-sa-seed.md`](operations/2026-05-mini-sa-seed.md)
+end-to-end on the Mac Mini, sitting at the GUI. Steps 1-4 passed. Step 5
+(cross-machine smoke test from iOS mosh) **failed** with a 1Password CLI
+integration popup ("Allow mosh-server to get CLI access") on the Mini's
+screen.
+
+Setup completed (Steps 1-4):
+  - `feat/multi-machine-op` checked out on Mini (PR #76 not yet merged).
+  - `chezmoi apply` on the three S-51 files (`secrets.fish`,
+    `secret-cache-read`, `dotfiles.fish`).
+  - `login.keychain-db` seeded with `OP_SERVICE_ACCOUNT_TOKEN` (`-A` ACL)
+    via `env -u OP_SERVICE_ACCOUNT_TOKEN op read | bash -c 'security
+    add-generic-password ... -A -U'`.
+  - Local Step-4 verification all green: `security find-generic-password
+    ... -w | head -c 4` → `ops_`; `fish -l -c 'string sub -l 4 -- "$OP_SERVICE_ACCOUNT_TOKEN"'`
+    → `ops_`; `fish -l -c 'bash -c "op whoami | grep User Type"'` →
+    `User Type: SERVICE_ACCOUNT`.
+
+Step-5 failure diagnostic from iOS mosh on the Mini:
+  - `status is-login` → TRUE (gate works as designed).
+  - `status is-interactive` → TRUE.
+  - `string length -- "$OP_SERVICE_ACCOUNT_TOKEN"` → 0 (loader produced
+    no value).
+  - `security find-generic-password ... -w 2>&1`
+    → `security: SecKeychainSearchCopyNext: The specified item could not
+    be found in the keychain.` (misleading — entry is present and was
+    just seeded; locked keychain reports items as not-found).
+  - `security show-keychain-info ~/Library/Keychains/login.keychain-db
+    2>&1` → `security: SecKeychainCopySettings ...: User interaction
+    is not allowed.` (canonical macOS error for "this keychain is
+    locked in this session and cannot be unlocked from a non-GUI
+    context").
+
+Root cause:
+  - macOS holds keychain unlock state **per Security Session**, not per
+    user. sshd- and mosh-server-spawned children run in a different
+    Security Session than the console GUI session. Auto-login keeps the
+    console session's keychain unlocked but does not propagate that
+    state to subsequent SSH/mosh Security Sessions.
+  - `secret-cache-read` swallows the failed Keychain read (`2>/dev/null`)
+    and falls through to `op read`. Because `OP_SERVICE_ACCOUNT_TOKEN`
+    is not yet in env (it is what we are trying to load), `op read` has
+    no auth and contacts the 1Password desktop CLI integration socket,
+    which raises the popup at fish startup.
+  - Same path is shared by `CLOUDFLARE_API_TOKEN` and `R2_*` via
+    `secret-cache-read`: they fail under SSH/mosh on $SECONDARY for
+    the same structural reason.
+
+Spec gap recorded:
+  - `docs/specs/S-51-multi-machine-sa-access.md` §"Operational
+    prerequisite" (lines 144-152) is incorrect. **Errata appended**;
+    original prose preserved.
+  - `docs/operations/2026-05-mini-sa-seed.md` got a status banner
+    flagging Step 5 as not reachable.
+  - `docs/1password-multi-machine.md` "Boot-time keychain lock" got an
+    inline Note callout above the trade-off table.
+  - `docs/secrets-architecture.md` Q10 status updated from open to moot
+    (the question's framing assumed auto-login was a working
+    mitigation).
+  - `docs/tasks.md` S-51 entry marked with the finding.
+
+What S-51 does still deliver correctly:
+  - Gate widening (`is-interactive` → `is-login`) works under SSH and
+    mosh.
+  - `dotfiles secret push` seeds remote Keychain successfully.
+  - `-A` ACL on the entry is correct.
+
+What it does not deliver:
+  - A no-popup SSH/mosh experience on $SECONDARY using only the login
+    Keychain as backing store. The Security Session model makes that
+    unreachable.
+
+Fix path: TBD. Four candidates evaluated; **none chosen yet**:
+  1. 0600 file at `~/.config/op/service_account_token`.
+  2. System keychain entry.
+  3. Per-user LaunchAgent serving via Unix socket.
+  4. 1Password Connect local Docker.
+
+This sync was documentation-only. No code changes. No commits to
+`secrets.fish.tmpl`, `secret-cache-read`, `secrets.toml`, or
+`dotfiles secret push`. The fix gets its own spec.
+
+---
+
 ## [2026-05-07] S-52 secrets architecture synthesis doc @ Hans Air M4
 
 Shipped the synthesis doc that maps the whole secrets / keys / credentials

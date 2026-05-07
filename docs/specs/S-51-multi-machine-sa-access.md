@@ -340,3 +340,91 @@ ssh $SECONDARY_SSH_ALIAS -- fish -l -c 'string sub -l 4 -- "$OP_SERVICE_ACCOUNT_
 
 S-46 is independent of S-51 and can land before, after, or never. The
 multi-machine extension does not depend on broadening the SA's vault scope.
+
+---
+
+## Errata 2026-05-07
+
+The §"Operational prerequisite" claim above (lines 144-152) — that enabling
+auto-login on $SECONDARY makes the login keychain readable from SSH/mosh
+sessions — is **wrong**. Recording here without rewriting the original prose.
+
+### Observation (Mac Mini, iOS mosh, 2026-05-07)
+
+After completing Steps 1-4 of [the seed runbook](../operations/2026-05-mini-sa-seed.md)
+all green locally (Keychain seeded with `-A`, `fish -l -c 'bash -c "op whoami"'`
+returns `User Type: SERVICE_ACCOUNT`), the Step-5 smoke test from iOS mosh
+still triggered a 1Password CLI integration popup on the Mini's GUI screen
+("Allow mosh-server to get CLI access").
+
+Diagnostic from inside the iOS mosh session, with the Mini's GUI logged in
+continuously since 2026-05-01:
+
+```
+status is-login                                              → TRUE
+status is-interactive                                        → TRUE
+string length -- "$OP_SERVICE_ACCOUNT_TOKEN"                 → 0
+security find-generic-password -a "$USER" -s OP_SERVICE_ACCOUNT_TOKEN -w 2>&1
+  → security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.
+security show-keychain-info ~/Library/Keychains/login.keychain-db 2>&1
+  → security: SecKeychainCopySettings ...: User interaction is not allowed.
+```
+
+The "item not found" message is misleading: the entry is present (it was
+seeded 5 minutes earlier from the console session, and is readable from
+that session). A locked keychain reports its items as not-found. The
+companion "User interaction is not allowed" on `show-keychain-info` is the
+canonical macOS error string for "this keychain is locked in this session
+and unlocking would need a GUI prompt I cannot raise from here."
+
+### Why auto-login does not fix it
+
+macOS holds keychain unlock state **per Security Session, not per user**.
+A Security Session is the OS-level isolation boundary launchd assigns to a
+process tree. The console GUI session is one Security Session; sshd- and
+mosh-server-spawned children run in different Security Sessions, each with
+its own securityd handle. Auto-login keeps the *console* session's keychain
+unlocked but does not propagate that state into any subsequent SSH/mosh
+session. There is no public macOS API to share unlock state between Security
+Sessions of the same UID.
+
+### Downstream impact
+
+`secret-cache-read` swallows the Keychain failure (`2>/dev/null`) and falls
+through to `op read`. Because `OP_SERVICE_ACCOUNT_TOKEN` is not yet in the
+env (it is what we are trying to load), `op read` has no auth and contacts
+the 1Password desktop CLI integration socket. That raises the popup at fish
+startup, *before* the user types anything.
+
+The same path is shared by `CLOUDFLARE_API_TOKEN` and `R2_*` via
+`secret-cache-read`: they fail under SSH/mosh on $SECONDARY for the same
+structural reason. (CF/R2 also have a separate vault-scope problem — they
+live in `Private`, outside SA scope per S-46. Orthogonal to this errata.)
+
+### What this spec still delivers correctly
+
+- Gate widening (`is-interactive` → `is-login`) works under SSH and mosh.
+- `dotfiles secret push` seeds remote Keychain successfully.
+- `-A` ACL on the entry is correct; without it the issue would be even
+  more constrained.
+
+### What it does not deliver
+
+A no-popup SSH/mosh experience on $SECONDARY using only the login Keychain
+as backing store. The Security Session model makes that unreachable.
+
+### Fix space (decision pending)
+
+Four candidates under consideration; none chosen yet:
+
+1. **0600 file** at `~/.config/op/service_account_token`; `secret-cache-read`
+   prepends a file-based check.
+2. **System keychain** entry; `secret-cache-read` reads from there too.
+3. **Per-user LaunchAgent** holding the SA token in memory, served via
+   Unix socket.
+4. **1Password Connect** local Docker; clients use `OP_CONNECT_TOKEN`.
+
+This errata records the gap, not the fix. The fix gets its own spec.
+
+See [`docs/sync-log.md`](../sync-log.md) `[2026-05-07] @ Mac-mini` for the
+full session transcript.

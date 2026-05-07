@@ -92,7 +92,7 @@ classes 1-3; classes 4-5 are open territory.
 | Device class | Role | GUI? | Biometric? | Status |
 |---|---|---|---|---|
 | **1. Primary Mac** ($PRIMARY) | Daily-driver laptop. The workspace where biometric works and 1Password desktop runs continuously. | Yes | Yes | Settled |
-| **2. Secondary Mac** ($SECONDARY) | Second daily-driver workstation, often headless or operated mostly over SSH. Today's S-51 target. | Sometimes (auto-login decision) | Only when at the screen | Settled |
+| **2. Secondary Mac** ($SECONDARY) | Second daily-driver workstation, often headless or operated mostly over SSH. Today's S-51 target. | Sometimes (auto-login decision, but see [S-51 errata](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)) | Only when at the screen | Settled for console; **SSH/mosh path open** (per-Security-Session keychain lock) |
 | **3. iOS SSH client** (Termius, Blink) | Phone or tablet, SSHing INTO the secondary. Cannot host 1P SSH agent. | iOS GUI | Yes (Face ID / Touch ID via Secure Enclave) | Mostly settled; `git push` from iOS-SSH session is an open option |
 | **4. Linux secondary** (server) | A non-Mac headless box. Has no Keychain, no biometric, no 1P desktop. | No | No | **Open** |
 | **5. Hardware wallet** (Ledger, Trezor) | Dedicated signing device for web3 keys. | Embedded (small screen + button) | Per-tx physical click | **Open / future** |
@@ -239,13 +239,16 @@ the abstraction. Until then, parked.
 
 ### Q10. Auto-login on $SECONDARY as codified preference vs operational
 
-**Status:** open. Today the auto-login choice is documented in
-[`1password-multi-machine.md`](1password-multi-machine.md#boot-time-keychain-lock)
-as an operational decision. Forker has to choose every time.
-**Blocker:** preference would need a `chezmoi.toml` field and a doctor
-check.
-**Next step:** if the choice gets re-litigated more than twice, codify it.
-For now, manual is fine.
+**Status:** moot as of 2026-05-07. Empirical test (iOS mosh against a Mac
+Mini with auto-login enabled and the GUI logged in continuously) showed
+that auto-login does **not** make the login keychain readable from SSH/mosh
+sessions: macOS holds keychain unlock state per Security Session, not per
+user. The original framing of this question — "should we codify the
+auto-login choice?" — assumed auto-login was a working mitigation. It
+isn't. See [S-51 errata 2026-05-07](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07).
+**Next step:** answered by whichever fix path supersedes the
+keychain-only design (file-based bootstrap, System keychain, LaunchAgent,
+or 1Password Connect — none chosen yet).
 
 ---
 
@@ -340,10 +343,13 @@ Tests:
 - Web3 / hardware wallet integration (Q6)
 - Token leak detection (Q7)
 - SA usage audit (Q8)
-- Auto-login preference codification (Q10)
+- ~~Auto-login preference codification (Q10)~~ — moot as of 2026-05-07; auto-login does not solve the SSH/mosh keychain issue. Replaced by an open question on which fix path supersedes the keychain-only design.
 
-The honest answer to "have we settled it?" is: **the macOS-to-macOS slice
-is settled. Everything outside that slice is catalogued, not solved.** Any
+The honest answer to "have we settled it?" is: **the macOS-to-macOS
+console-to-console slice is settled. The macOS-to-macOS SSH/mosh slice is
+not** (open as of 2026-05-07 — see
+[S-51 errata](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)).
+**Everything outside macOS-to-macOS is catalogued, not solved.** Any
 session that wants to reduce the open list should pick one item from the
 catalog and write a spec.
 
