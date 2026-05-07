@@ -6,6 +6,50 @@ context.
 
 ---
 
+## [2026-05-07] sync @ Hans Air M4
+
+Apply pending PRs landed: chezmoi apply absorbed PR #72 (SSH privacy gate
+in /dotfiles-sync) and PR #69 (Brewfile cask "zen" canonical rename).
+
+SSH config.d (privacy gate, all on-disk fragments now `.local` + 1P-backed):
+  - rename trading-egress-tokyo → trading-egress-tokyo.local
+    (1P backup pre-existed: "SSH config: trading-egress-tokyo" in vault Trading)
+  - create 1P Secure Note "SSH config: egress" in vault Trading
+    for the existing egress.local fragment (Tailscale alias to
+    trading-egress-tokyo). egress.local already correctly named.
+  - mini.local was already conformant (1P/Private).
+
+Brewfile (core - home/dot_Brewfile.tmpl):
+  - removed brew (8 stale, not installed on this Air): ffmpeg, go, librsvg,
+    node, protobuf, ripgrep, sqlite, terraform
+  - removed cask: codex
+  - added brew: bats-core, mosh, pandoc, rust, wireguard-tools
+
+Brewfile (local - ~/.Brewfile.local):
+  - added cask: antigravity, calibre, chrysalis, codexbar, conductor, cursor,
+    grandperspective, hyprnote, opencode-desktop, tana, tor-browser, zen
+  - added brew: doctl, duti, gitup, lume, markdown-oxide, ocaml, rclone,
+    subversion, tldx, xcodegen, hashicorp/tap/terraform
+  - kept (per user choice, despite supersedes by zoxide / fish): z, zsh
+
+VS Code extensions:
+  - added (5): docker.docker, dwarvesf.md-ar-ext, github.copilot-chat,
+    ms-vsliveshare.vsliveshare, ocamllabs.ocaml-platform
+  - removed (1): openai.chatgpt (uninstalled)
+
+Claude skills (suppressed via ~/.config/dotfiles/skills.local, all local):
+  - agentkernel, bot-reply-formatting, cashflow-append, cashflow-correct,
+    cashflow-report
+
+Untracked drift left for user (not actioned):
+  - legacy brew migrations (recommend uninstall): hub, pipx, the_silver_searcher,
+    yarn (+ python@3.10 tag-along of pipx)
+  - cosmetic: microsoft-auto-update (Office), swiftdefaultappsprefpane (one-off),
+    zen-browser (alias artifact for cask "zen")
+  - fisher.fish (we use chezmoiexternal, not fisher) - skip recommended
+
+---
+
 ## [2026-05-06] sync @ Hans Air M4
 
 Config:
