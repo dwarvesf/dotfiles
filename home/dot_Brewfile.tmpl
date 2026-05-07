@@ -32,7 +32,6 @@ brew "gh"                     # GitHub CLI (replaces hub)
 brew "git-delta"              # better git diffs
 brew "jq"
 brew "yq"
-brew "ripgrep"                # rg (replaces ag/grep)
 brew "fd"                     # find replacement
 brew "bat"                    # cat with syntax highlighting
 brew "eza"                    # modern ls
@@ -51,6 +50,8 @@ brew "httpie"
 brew "watch"
 brew "tldr"                   # example-driven man pages
 brew "shellcheck"             # shell script linter
+brew "bats-core"              # Bash Automated Testing System
+brew "mosh"                   # mobile shell (resilient SSH over flaky links)
 brew "lnav"                   # log navigator
 brew "chezmoi"                # dotfiles manager
 brew "mdq"                    # jq for markdown
@@ -75,13 +76,12 @@ brew "hashicorp/tap/vault"    # secrets management
 brew "mise"                   # polyglot version manager (replaces nvm, rbenv, pyenv)
 
 # ── Languages & Runtimes ─────────────────────────────────────────────
-brew "go"
 brew "golangci-lint"          # Go linter (replaces gometalinter)
-brew "node"
 brew "pnpm"
 brew "uv"                     # fast Python package manager (replaces pipx)
 brew "python@3.12"
 brew "rustup"
+brew "rust"                   # Rust toolchain (paired with rustup)
 brew "elixir"
 
 # ── Git extras ────────────────────────────────────────────────────────
@@ -102,7 +102,6 @@ brew "kubectx"                # fast ctx/ns switching (includes kubens)
 brew "kubecolor"              # colored kubectl output
 brew "stern"                  # multi-pod log tailing
 brew "helm"
-brew "terraform"
 brew "opentofu"               # community fork of terraform (CNCF)
 brew "dive"                   # Docker image layer explorer (TUI)
 brew "awscli"
@@ -110,18 +109,17 @@ brew "flyctl"
 brew "caddy"
 brew "nginx"
 brew "cloudflared"
+brew "wireguard-tools"        # WireGuard VPN userspace tools
 
 # ── Data & Media ──────────────────────────────────────────────────────
 brew "duckdb"
-brew "sqlite"
-brew "ffmpeg"
 brew "imagemagick"
 brew "chafa"                  # terminal image renderer (kitty protocol)
-brew "librsvg"                # SVG to PNG (rsvg-convert)
 brew "optipng"
 brew "qpdf"
 brew "qrencode"
 brew "graphviz"
+brew "pandoc"                 # universal document converter
 brew "yt-dlp"                 # youtube-dl successor
 
 # ── AI Tools ──────────────────────────────────────────────────────────
@@ -137,7 +135,6 @@ brew "playwright-cli"         # standalone Playwright runner (separate from npm 
 
 # ── Build Tools ───────────────────────────────────────────────────────
 brew "cmake"
-brew "protobuf"
 brew "buf"                    # modern Protobuf CLI (lint, breaking, compile)
 
 # ── Web3 / DeFi ──────────────────────────────────────────────────────
@@ -164,7 +161,6 @@ brew "mas"                    # Mac App Store CLI
 
 # ── AI / LLM ─────────────────────────────────────────────────────────
 cask "claude"                 # Claude desktop + Claude Code CLI
-cask "codex"                  # OpenAI Codex CLI
 
 # ── macOS Apps ────────────────────────────────────────────────────────
 cask "visual-studio-code"
