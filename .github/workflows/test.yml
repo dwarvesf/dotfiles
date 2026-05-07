@@ -33,6 +33,17 @@ jobs:
       - name: Lint statusline script
         run: shellcheck home/dot_claude/executable_statusline-command.sh
 
+      - name: Lint scripts/
+        run: |
+          for f in scripts/*.sh; do
+            [ -f "$f" ] || continue
+            echo "Checking $f"
+            shellcheck "$f"
+          done
+
+      - name: Doc discipline contract (framework vs operations)
+        run: ./scripts/test-doc-discipline.sh --verbose
+
   test-macos:
     runs-on: macos-latest
     steps:

@@ -6,6 +6,104 @@ context.
 
 ---
 
+## [2026-05-07] S-52 secrets architecture synthesis doc @ Hans Air M4
+
+Shipped the synthesis doc that maps the whole secrets / keys / credentials
+problem space, sitting above the 13-spec chain. Triggered by the question
+"have we settled this?" — the honest answer was no, only a slice. The
+synthesis doc makes the gap explicit and forces the prioritization
+conversation.
+
+New files:
+  - `docs/secrets-architecture.md`: threat model (6 adversary scenarios),
+    credential taxonomy (6 classes), device taxonomy (5 classes incl.
+    open Linux/hardware-wallet entries), credential paths (1-5 today plus
+    placeholder for future hardware-wallet path), spec-to-slice mapping
+    for all 13 secrets-related specs, open-questions catalog (10 items
+    each with status / blocker / next step), framework-vs-cookbook
+    decision tree, settling status, maintenance contract.
+  - `docs/specs/S-52-secrets-architecture-synthesis-doc.md`: spec defining
+    the doc's contents, acceptance criteria, and 4 verification tests.
+    Status: done.
+
+Modified docs:
+  - `docs/1password.md`: spec chain table extended with S-52, plus a
+    pointer at the top of the chain area to the synthesis doc as the
+    whole-surface entry point.
+  - `docs/1password-multi-machine.md`: synthesis doc added to "See also"
+    as the first entry.
+  - `README.md`: docs table extended with the synthesis doc and the
+    multi-machine doc (the latter was missing from README's table
+    despite existing).
+  - `docs/tasks.md`: S-52 appended to completed list.
+
+Modified discipline test:
+  - `scripts/test-doc-discipline.sh`: FRAMEWORK_DOCS now includes
+    `docs/secrets-architecture.md` and `docs/specs/S-52-*.md`. Test still
+    passes (doc is placeholder-clean by design).
+
+Verification:
+  - `./scripts/test-doc-discipline.sh`: ✓ Doc discipline contract holds.
+  - All 13 secrets-related specs referenced in the synthesis doc.
+  - All cross-references present (1password.md, 1password-multi-machine.md,
+    operations/2026-05-mini-sa-seed.md).
+  - Back-links from README, 1password.md, 1password-multi-machine.md to
+    synthesis doc all present.
+
+---
+
+## [2026-05-07] S-51 multi-machine SA access @ Hans Air M4
+
+Shipped the multi-machine extension to S-49's dual-mode `op` design.
+Originated from a session about SSH-into-Mini breaking 1P biometric flows.
+Two minimal changes inside the dotfiles surface, plus two new docs.
+
+Changes:
+  - `home/dot_config/fish/conf.d/secrets.fish.tmpl`: gate widened from
+    `if status is-interactive` to `if status is-login`. Non-interactive
+    SSH login shells (`ssh user@host '<cmd>'`) now load the SA token,
+    so subprocess `op read` works headlessly from the remote side.
+    Added a comment block referencing S-51 for the rationale.
+  - `home/dot_config/fish/functions/dotfiles.fish`: new `secret push VAR
+    ssh-target` sub-command. Reads locally via `op read` (S-49 interceptor
+    routes through biometric for full vault scope), pipes the value over
+    SSH stdin (never on the command line), writes to the remote login
+    keychain via `security add-generic-password -U`. Pre-flight SSH probe
+    refuses to leak the value if the target is unreachable.
+
+New docs:
+  - `docs/1password-multi-machine.md`: companion to docs/1password.md.
+    Covers the 4 credential paths, the 3 gates at fish login, per-
+    environment state matrix (Air-GUI / Mini-GUI / SSH-from-Air /
+    SSH-from-iOS / post-reboot), the seed-from-Air recipe, the boot-
+    time keychain-lock mitigations, iOS SSH (Termius/Blink) support
+    matrix including the `git push` gap, and the web3 hardening rule
+    (signing material never in SA-readable vaults).
+  - `docs/specs/S-51-multi-machine-sa-access.md`: spec proper, format
+    matching S-49/S-50. Status: done after Air-side regression passed.
+
+Touched docs:
+  - `docs/1password.md`: added a Multi-machine pointer section after
+    "Trade-offs accepted", and added S-51 to the spec chain table.
+  - `docs/tasks.md`: appended S-51 to completed list.
+  - `README.md`: small addendum to the Security/dual-mode paragraph
+    pointing at the multi-machine doc.
+
+Operational notes:
+  - The Mini's login keychain auto-lock at reboot is documented as an
+    operational decision (auto-login or manual GUI login post-reboot),
+    not a dotfiles change.
+  - iOS-driven `git push` from Mini is documented as a future option
+    (per-iOS-app SE-bound key registered with GitHub). Not implemented.
+  - Mini-side seeding deferred: this commit ships the helper and the
+    code change; the actual seed run happens when the user requests it.
+
+Verification (Air-side):
+  - `fish -n` on dotfiles.fish: clean.
+  - regression test plan tests 1-4 from S-51 to be run before commit.
+
+---
+
 ## [2026-05-07] sync @ Hans Air M4
 
 Apply pending PRs landed: chezmoi apply absorbed PR #72 (SSH privacy gate

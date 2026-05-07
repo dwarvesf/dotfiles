@@ -55,6 +55,8 @@ Updated: 2026-05-03 (S-50 shipped)
 - [x] S-48: Narrow `chezmoi apply` scope in `dotfiles secret add` / `secret rm` (prevents source/target drift when unrelated managed files have pending changes)
 - [x] S-49: Dual-mode `op` via fish interceptor (auto-load token + intercept interactive `op` to strip it; subprocess paths get headless bearer auth, daily shell stays biometric)
 - [x] S-50: `/dotfiles-sync` detects user-authored Claude skill drift (one-shot absorbed 8 untracked skills + ongoing core/local/skip prompt for new skills; mirrors Brewfile pattern)
+- [x] S-51: Multi-machine SA access (`is-login` gate in secrets.fish + `dotfiles secret push` helper to seed remote Keychain; unblocks SSH-driven `op read` on the Mini without breaking S-49 dual-mode on the Air)
+- [x] S-52: Secrets architecture synthesis doc (`docs/secrets-architecture.md`) — the map above the spec chain. Threat model, credential × device × path matrix, spec-to-slice index, open-questions catalog. Backed by `scripts/test-doc-discipline.sh` discipline contract.
 
 ## Next up
 

@@ -164,6 +164,22 @@ Don't add personal vaults to SA scope. Don't run a second SA — see S-46 §"Why
 
 ---
 
+## Multi-machine (Air, Mini, iOS SSH)
+
+The model above describes a single machine with a GUI session. When you have
+two daily-driver Macs sharing dotfiles (Air + Mini) and you operate the Mini
+mostly over SSH, two specific things change: the `is-login` gate (so non-
+interactive SSH login shells also load secrets) and a one-time Keychain seed
+from the GUI machine to the headless one. iOS SSH clients (Termius, Blink)
+ride on the same model with one gap: outbound `git push` from the Mini needs
+a per-iOS-app SSH key since iOS has no 1Password SSH agent to forward.
+
+Full design, gate flow, per-environment matrix, web3 hardening rule, and
+recipes live in [`1password-multi-machine.md`](1password-multi-machine.md).
+The change list that ships this is [S-51](specs/S-51-multi-machine-sa-access.md).
+
+---
+
 ## Troubleshooting
 
 **"`op vault list` only shows Trading"**
@@ -198,6 +214,14 @@ Already fixed (post-S-49). The skill now drops `OP_SERVICE_ACCOUNT_TOKEN` before
 | [S-47](specs/S-47-agent-token-opt-in-wrapper.md) | Opt-in wrapper (intermediate redesign) | amended by S-49 |
 | [S-48](specs/S-48-secret-add-narrow-apply-scope.md) | Narrow `chezmoi apply` scope in `dotfiles secret add/rm` | done |
 | [S-49](specs/S-49-dual-mode-op-via-fish-interceptor.md) | **Dual-mode `op` via fish interceptor (current model)** | done |
+| [S-51](specs/S-51-multi-machine-sa-access.md) | **Multi-machine extension** (`is-login` gate + `dotfiles secret push`) | done |
+| [S-52](specs/S-52-secrets-architecture-synthesis-doc.md) | **Synthesis doc** mapping the whole secrets problem space | done |
+
+For the **whole-surface map** (every credential class × device × path,
+spec-to-slice index, threat model, open-questions catalog), see
+[`secrets-architecture.md`](secrets-architecture.md). That doc is the
+entry point if you're trying to figure out where a future change should
+go; this doc is the day-to-day manual.
 
 The arc S-42 → S-47 → S-49 happened in this order:
 
