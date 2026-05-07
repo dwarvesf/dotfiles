@@ -55,6 +55,7 @@ Updated: 2026-05-03 (S-50 shipped)
 - [x] S-48: Narrow `chezmoi apply` scope in `dotfiles secret add` / `secret rm` (prevents source/target drift when unrelated managed files have pending changes)
 - [x] S-49: Dual-mode `op` via fish interceptor (auto-load token + intercept interactive `op` to strip it; subprocess paths get headless bearer auth, daily shell stays biometric)
 - [x] S-50: `/dotfiles-sync` detects user-authored Claude skill drift (one-shot absorbed 8 untracked skills + ongoing core/local/skip prompt for new skills; mirrors Brewfile pattern)
+- [x] S-55: Batch mode for `secret-cache-read` to amortize bash-startup at fish login (~15 ms saving on Hans-Air-M4 warm steady-state; one bash subprocess + N keychain reads inside, NUL-separated output, S-54 ordering preserved internally)
 
 ## Next up
 

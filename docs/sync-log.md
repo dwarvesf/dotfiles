@@ -6,6 +6,45 @@ context.
 
 ---
 
+## [2026-05-08] S-55 ship: batch mode for secret-cache-read @ Hans Air M4
+
+Profiled `fish --profile-startup -lic exit` on Hans-Air-M4 to find
+top-self-time contributors. Secret pipeline was ~70 ms (4 × ~17 ms
+per `$_sc` call), 40% of 177 ms total warm startup.
+
+Replaced 4-fork pattern with single `secret-cache-read --batch` call:
+N pairs in argv, NUL-separated output, fish-side `string split0` + loop
+to apply `set -gx`. S-54 ordering enforced inside the script
+(`OP_SERVICE_ACCOUNT_TOKEN` resolved first, `export`ed for pass 2 so
+later `op read` fallbacks have bearer auth in env).
+
+Measured savings on Hans-Air-M4 (warm cold-fish, 5 runs each):
+  - Before: ~170 ms
+  - After:  ~155 ms
+  - Δ: ~15 ms (-9%)
+
+Smaller win than predicted (~50 ms). Reason: each `security
+find-generic-password` call has irreducible kernel overhead (~13 ms);
+batching only collapses bash-startup overhead (~3 ms × 4 = ~12 ms).
+Honest delta documented in spec trade-offs.
+
+Spec: docs/specs/S-55-batch-secret-cache-read.md (status: done).
+Verification:
+  - chezmoi execute-template renders correctly with batch invocation
+  - fish -n on rendered output: clean
+  - shellcheck on secret-cache-read: clean
+  - smoke test (string length only, never echoed): all 4 vars populated
+  - 5× cold-fish-startup timing: 0.15-0.16 s steady state
+
+Branched off `main` (PR #76 still open with S-51 scope). Will need a
+trivial 3-way merge with PR #76 (the gate change `is-interactive →
+is-login`) and PR #77 (S-54 explicit-first-load, now superseded by the
+internal two-pass in this script).
+
+Marginal improvement. Worth shipping. Not headlined.
+
+---
+
 ## [2026-05-07] sync @ Hans Air M4
 
 Apply pending PRs landed: chezmoi apply absorbed PR #72 (SSH privacy gate
