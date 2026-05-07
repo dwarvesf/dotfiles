@@ -164,7 +164,7 @@ if [ -n "$duration_ms" ] && [ "$duration_ms" != "0" ]; then
 fi
 
 # --- Hostname ---
-host=$(hostname -s 2>/dev/null)
+host=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
 [ -n "$host" ] && host_part=" ${DIM}@${host}${RESET}" || host_part=""
 
 printf '%b' "${BLUE}${dir}${RESET}${git_part}${model_part}${effort_part}${ctx_part}${rate_part}${duration_part}${host_part}"

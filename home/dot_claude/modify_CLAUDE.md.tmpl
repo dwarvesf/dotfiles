@@ -46,6 +46,25 @@ printf '%s\n' "$PREFIX"
 
 cat <<'MARKDOWN'
 
+# Machines I work from
+
+The SessionStart hook prints `Machine: <user>@<localhostname> (<hw.model>)` so you always know which box you landed on. This table maps shorthand the user uses verbally to actual SSH targets.
+
+| Shorthand | Hostname / SSH alias | User | Role |
+|---|---|---|---|
+| air | mac-air (Hans-Air-M4) | tieubao | daily driver, Da Nang. MacBook Air M4. |
+| mini | `ssh mini` (Tailscale) / `ssh mini-lan` (mDNS fallback) | server | Mac Mini M4 Pro 64GB, daemon-runtime account. Use for status checks, log inspection, and the one ADR-0012 grant: `kickstart -k system/foundation.d.hermes-agent` (passwordless). Anything else needs the `tieubao` user via `mini-tieubao`. |
+| mini-tieubao | `ssh mini-tieubao` | tieubao | Same physical Mini, ops-script account. Passwordless `print` / `kickstart -k` / `bootout` / `bootstrap` against `system/foundation.d.*` per SPEC-032. **Use this in any script that needs broader launchctl verbs than `kickstart -k hermes-agent`.** Convention defined in SPEC-052. |
+| egress-tokyo, trading-egress-tokyo | `ssh trading-egress-tokyo` | server | Vultr Tokyo VPS, trading egress. |
+| egress | `ssh egress` (see `~/.ssh/config.d/egress.local`) | server | egress relay. |
+
+Resolution rules:
+
+- "the mini" / "mac mini" → `mini` if the work is daemon control / log tail / `kickstart -k hermes-agent`. `mini-tieubao` if the work is broader foundation.d.* manipulation (bootout, bootstrap, print on a non-hermes label) or needs `(server) ALL` run-as-server escalation.
+- "this machine" / "here" → use whatever the SessionStart banner shows. If the banner contradicts the user's framing, surface the conflict before acting.
+
+The Mini hosts the ops-agent (`foundation.d.hermes-agent` LaunchDaemon, project at `/Users/server/dev/hermes-agent`) plus Ollama and `vps-mon-agent`. SPEC-032 specifies the substrate; ADR 0012 explains why `server`'s grant is narrow.
+
 # Tool selection
 
 Durable rule for Claude Code. Applies to every session. Default to acting. Only ask when escalation triggers fire (see bottom).

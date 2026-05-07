@@ -6,6 +6,20 @@ context.
 
 ---
 
+## [2026-05-06] sync @ Hans Air M4
+
+Config:
+  - statusline: switch hostname source from `hostname -s` (returns generic "Mac")
+    to `scutil --get LocalHostName` (returns "Hans-Air-M4"), matching the
+    SessionStart machine-banner hook. User noticed the statusline read `@Mac`
+    instead of the actual machine name; root cause was the macOS default
+    smb-style hostname clobbering the more useful LocalHostName.
+
+Other drift deferred (Brewfile, .chezmoiscripts/*, dotfiles-sync.md command
+edits) — needs its own dedicated sync pass.
+
+---
+
 ## [2026-05-05] security: rewrite history to scrub leaked SSH file @ Hans Air M4
 
 Following the privacy-gate work in PR #72, decided to also retroactively scrub
