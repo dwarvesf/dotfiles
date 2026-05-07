@@ -55,6 +55,7 @@ Updated: 2026-05-03 (S-50 shipped)
 - [x] S-48: Narrow `chezmoi apply` scope in `dotfiles secret add` / `secret rm` (prevents source/target drift when unrelated managed files have pending changes)
 - [x] S-49: Dual-mode `op` via fish interceptor (auto-load token + intercept interactive `op` to strip it; subprocess paths get headless bearer auth, daily shell stays biometric)
 - [x] S-50: `/dotfiles-sync` detects user-authored Claude skill drift (one-shot absorbed 8 untracked skills + ongoing core/local/skip prompt for new skills; mirrors Brewfile pattern)
+- [x] S-54: Load `OP_SERVICE_ACCOUNT_TOKEN` first in `secrets.fish` so remote-shell cache misses fall through to bearer-auth `op read` (suppresses misattributed `tailscaled` 1P popup on mosh-into-Mini after S-51 + S-53)
 
 ## Next up
 

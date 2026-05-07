@@ -6,6 +6,28 @@ context.
 
 ---
 
+## [2026-05-08] S-54 ship @ Hans Air M4
+
+Fix: `home/dot_config/fish/conf.d/secrets.fish.tmpl` now loads
+`OP_SERVICE_ACCOUNT_TOKEN` *before* iterating the rest of `.secrets`. Previously
+Go's alphabetical map iteration loaded `CLOUDFLARE_API_TOKEN` first, so on
+$SECONDARY hosts (e.g. `tieubao@mini`) the cache miss for `CLOUDFLARE_API_TOKEN`
+called `op read` with no bearer token in env, falling back to 1P Desktop
+integration. 1P attributed the request to `tailscaled` (the SSH transport
+ancestor in Tailscale-SSH process trees) and popped an authorization dialog
+on every cold mosh session. After the reorder, every `op read` runs with
+SA bearer auth → no Desktop integration call → no popup, no misattribution.
+
+Spec: docs/specs/S-54-load-sa-token-first.md (status: done).
+Verification: chezmoi execute-template + fish -n on the rendered output.
+No data plane touched on $SECONDARY (System.keychain seed from S-53 still
+covers the SA-token cache hit).
+
+Branched off main (PR #76 still open with S-51 scope; followed
+the scope-lock rule).
+
+---
+
 ## [2026-05-07] sync @ Hans Air M4
 
 Apply pending PRs landed: chezmoi apply absorbed PR #72 (SSH privacy gate
