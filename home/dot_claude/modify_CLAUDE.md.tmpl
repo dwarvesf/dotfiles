@@ -63,7 +63,7 @@ Applied to every project. Project-level `CLAUDE.md` files may add on top of thes
 
 ## Formatting
 
-- Do NOT use em dashes in responses. Use commas, colons, parentheses, or separate sentences instead.
+- **NEVER use em dashes (—, U+2014) in responses. NON-NEGOTIABLE.** This is a training-data habit. Assume your first instinct to write `—` is wrong every time. Replace with: comma (`,`), colon (`:`), parentheses (`()`), or a sentence break (`.`). Hyphens (`-`) and en dashes (`–`) are fine. If you catch yourself writing `—`, rewrite the sentence before sending.
 - Prefer short direct sentences over long ones with multiple clauses.
 - No filler, no preamble, no recap of what I just asked.
 
@@ -89,17 +89,19 @@ The SessionStart hook prints `Machine: <user>@<localhostname> (<hw.model>)` so y
 | Shorthand | Hostname / SSH alias | User | Role |
 |---|---|---|---|
 | air | mac-air (Hans-Air-M4) | tieubao | daily driver, Da Nang. MacBook Air M4. |
-| mini | `ssh mini` (Tailscale) / `ssh mini-lan` (mDNS fallback) | server | Mac Mini M4 Pro 64GB, daemon-runtime account. Use for status checks, log inspection, and the one ADR-0012 grant: `kickstart -k system/foundation.d.hermes-agent` (passwordless). Anything else needs the `tieubao` user via `mini-tieubao`. |
-| mini-tieubao | `ssh mini-tieubao` | tieubao | Same physical Mini, ops-script account. Passwordless `print` / `kickstart -k` / `bootout` / `bootstrap` against `system/foundation.d.*` per SPEC-032. **Use this in any script that needs broader launchctl verbs than `kickstart -k hermes-agent`.** Convention defined in SPEC-052. |
+| mini | `ssh mac-mini-danang` (Tailscale FQDN, primary) / `ssh mini-lan` (mDNS fallback) | server | Mac Mini M4 Pro 64GB, daemon-runtime account. Use for status checks, log inspection, and the one ADR-0012 grant: `kickstart -k system/foundation.d.hermes-agent` (passwordless). Anything else needs the `tieubao` user via `mini-tieubao`. |
+| mini-tieubao | `ssh mini-tieubao` | tieubao | Same physical Mini, ops-script account. Passwordless `print` / `kickstart -k` / `bootout` / `bootstrap` against both `system/foundation.d.*` (Dwarves-tenant daemons) and `system/mini.*` (personal-Mini daemons) per SPEC-052. **Use this in any script that needs broader launchctl verbs than `kickstart -k foundation.d.hermes-agent`.** |
+| iphone (mobile pilot) | Termius + Mosh over Tailscale to `tieubao@mac-mini-danang` | tieubao | iOS pilot path per SPEC-002. Tasks needing MCP, `op://`, or Hermes verbs run here via mosh; stateless parallel work runs in the iOS Claude app's Cloud Sandbox. Phase 1: no new daemons, no new users. |
 | egress-tokyo, trading-egress-tokyo | `ssh trading-egress-tokyo` | server | Vultr Tokyo VPS, trading egress. |
 | egress | `ssh egress` (see `~/.ssh/config.d/egress.local`) | server | egress relay. |
 
 Resolution rules:
 
-- "the mini" / "mac mini" → `mini` if the work is daemon control / log tail / `kickstart -k hermes-agent`. `mini-tieubao` if the work is broader foundation.d.* manipulation (bootout, bootstrap, print on a non-hermes label) or needs `(server) ALL` run-as-server escalation.
-- "this machine" / "here" → use whatever the SessionStart banner shows. If the banner contradicts the user's framing, surface the conflict before acting.
+- "the mini" / "mac mini" -> `mini` if the work is daemon control, log tail, or `kickstart -k hermes-agent`. `mini-tieubao` if the work is broader `foundation.d.*` or `mini.*` manipulation (bootout, bootstrap, print on a non-hermes label) or needs `(server) ALL` run-as-server escalation.
+- "this machine" / "here" -> use whatever the SessionStart banner shows. If the banner contradicts the user's framing, surface the conflict before acting.
+- "from my phone" / "iphone" -> the SPEC-002 iOS pilot path: Termius + Mosh + Tailscale into `tieubao@mac-mini-danang`. The iOS Claude app's Cloud Sandbox is for stateless parallel work; the Mini is for anything needing MCP, `op://`, or Hermes-resident state.
 
-The Mini hosts the ops-agent (`foundation.d.hermes-agent` LaunchDaemon, project at `/Users/server/dev/hermes-agent`) plus Ollama and `vps-mon-agent`. SPEC-032 specifies the substrate; ADR 0012 explains why `server`'s grant is narrow.
+The Mini runs two daemon namespaces. `foundation.d.*` are Dwarves-tenant daemons (`foundation.d.hermes-agent`, `foundation.d.hermes-insights-daily`, `foundation.d.ollama`); the substrate spec is dfoundation `SPEC-032-mac-mini-infrastructure-substrate.md`, and ADR-0012 in dfoundation explains why server's grant is narrow. `mini.*` are personal-Mini daemons (`mini.restic-backup`, `mini.restic-check`, `mini.upgrade-check`) per dfoundation ADR-0020 + SPEC-054 (2026-05-06, refined 2026-05-08); the substrate plists and runbooks live at `ops-toolkit/tools/mac-mini-substrate/` and `ops-toolkit/tools/mac-backup/`. Both namespaces respond to `launchctl print system/<label>` from `tieubao@` per SPEC-052. The `vps-mon-agent` lives in `ops-toolkit/tools/vps-mon/`. Mobile pilot architecture (iPhone): see ops-toolkit `_meta/SPEC-002-mobile-pilot-v0.md`.
 
 # Tool selection
 

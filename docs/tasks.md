@@ -1,6 +1,6 @@
 # Task Backlog: dwarvesf/dotfiles
 
-Updated: 2026-05-08 (S-58 shipped)
+Updated: 2026-05-09 (S-59 shipped)
 
 <!-- Old ID → New ID mapping: F-XX/R-XX/T-XX → S-XX. See docs/specs/S-*.md -->
 <!-- S-40 is intentionally unused (number skipped, no spec exists). -->
@@ -65,6 +65,7 @@ Updated: 2026-05-08 (S-58 shipped)
 - [x] S-56: Personal preferences move into the dotfiles modify-script (the `# Personal preferences` block — tone/feedback, formatting, visuals, light-theme defaults — was being maintained by hand in `~/.claude/CLAUDE.md` lines 1-32 on every machine, not version-controlled. Moved into `modify_CLAUDE.md.tmpl` heredoc above `# Machines I work from`. Above-marker upstream prefix now collapses to empty. Mac mini: 246 lines stable, 6 canonical headers each appearing exactly once.)
 - [x] S-57: `dotfiles ssh audit` strips `OP_SERVICE_ACCOUNT_TOKEN` explicitly so it always queries via biometric (the S-49 op interceptor only strips when `status is-interactive`; the audit is reached from non-interactive contexts where the SA-scoped session can't see Private vault, producing misleading "(no SSH Key items in vault)" + bogus unbacked-key nag. Fix is local to the audit case: 3 `op` invocations now use `env -u OP_SERVICE_ACCOUNT_TOKEN command op`. Mac mini: audit now correctly reports 3 SSH keys in Private and `✓ all 2 disk key(s) have a 1P counterpart`.)
 - [x] S-58: Per-machine `Host github.com` block in dotfiles ssh config (S-53 ratify) (the S-53 recipe writes the github block directly to `~/.ssh/config` on the machine; today's broad chezmoi apply clobbered it. Added the block to `home/dot_ssh/config.tmpl` template-conditional on `~/.ssh/id_ed25519_github` existing — fresh machines without S-53 done get 1P agent fallback instead of broken github SSH. Verified on Mac mini: block deploys, idempotent, `ssh -T git@github.com` authenticates as `tieubao`.)
+- [x] S-59: Sync `# Machines I work from` table with ops-toolkit canonical updates. Mini hostname `mac-mini-danang` (Tailscale FQDN) per SPEC-002; daemon namespace split (`foundation.d.*` Dwarves-tenant, `mini.*` personal-Mini per dfoundation ADR-0020 + SPEC-054); new iphone row for the SPEC-002 mobile pilot path; substrate pointers updated to `ops-toolkit/tools/{mac-mini-substrate,mac-backup}/`. Verified on Mac mini: 246 -> 248 lines stable across 3 applies; zero em dashes in changed region.
 
 ## Next up
 

@@ -6,6 +6,49 @@ context.
 
 ---
 
+## [2026-05-09] S-59 ship: `# Machines I work from` synced with ops-toolkit @ Mac mini
+
+User flagged that `tieubao/ops-toolkit` had updates affecting the Machines
+table that hadn't flowed into dotfiles. Three concrete drifts found:
+
+1. Mini Tailscale hostname is `mac-mini-danang` (FQDN) per
+   `ops-toolkit/_meta/SPEC-002-mobile-pilot-v0.md`. Dotfiles said `ssh mini`.
+2. Daemon namespace split per dfoundation ADR-0020 +
+   `SPEC-054-partial-reversal-tenant-artifacts-back.md` (2026-05-06,
+   refined 2026-05-08): `foundation.d.*` is Dwarves-tenant only;
+   `mini.*` is personal-Mini (`mini.restic-backup`, `mini.restic-check`,
+   `mini.upgrade-check`). Personal-Mini plists moved out of
+   `dfoundation/infra/substrate/mac-mini/` into
+   `ops-toolkit/tools/{mac-mini-substrate,mac-backup}/`.
+3. Mobile pilot path: iPhone -> Termius + Mosh + Tailscale ->
+   `tieubao@mac-mini-danang` per SPEC-002. No mention in dotfiles before.
+
+Fix: edited the `# Machines I work from` block in
+`home/dot_claude/modify_CLAUDE.md.tmpl` heredoc:
+- Mini row hostname updated to `ssh mac-mini-danang`.
+- mini-tieubao role text clarified to call out both `foundation.d.*`
+  (tenant) and `mini.*` (personal) namespaces.
+- New iphone (mobile pilot) row added between mini-tieubao and
+  egress-tokyo.
+- Trailing prose rewritten to describe the two daemon namespaces
+  separately, point at `ops-toolkit/tools/mac-mini-substrate/` for the
+  personal substrate, and reference SPEC-002 for the mobile path.
+- Resolution rules gained a new "from my phone / iphone" entry.
+
+Verified on Mac mini:
+- `chezmoi execute-template` renders cleanly; shellcheck clean.
+- `chezmoi apply ~/.claude/CLAUDE.md` deploys (live file 246 -> 248
+  lines).
+- Apply twice, line count stable. Idempotency preserved (S-55).
+- Zero em dashes in the changed region (per the strengthened rule
+  shipped same session).
+
+Spec: [S-59](specs/S-59-machines-table-sync-from-ops-toolkit.md). Cross-
+machine impact: Mac Air M4 will inherit the same heredoc on next
+`chezmoi apply`.
+
+---
+
 ## [2026-05-08] S-58 ship: per-machine `Host github.com` SSH block ratified @ Mac mini
 
 User decision (asked 22:50): re-add the github SSH block to dotfiles
