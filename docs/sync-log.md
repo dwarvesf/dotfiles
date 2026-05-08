@@ -6,6 +6,51 @@ context.
 
 ---
 
+## [2026-05-09] fix: /dotfiles-sync filters always-run chezmoi scripts from drift report @ Mac mini
+
+User flagged that today's sync report tagged four `.chezmoiscripts/*.sh`
+entries as `[pseudo-stale]` under "Drift to absorb." That bucket was
+wrong on two counts:
+
+1. Scripts don't deploy files; they execute. There is no destination
+   file to absorb back into source, so "Drift to absorb" is the wrong
+   verb regardless.
+2. Three of the four (`run_before_aa-init`, `run_before_ab-1password-check`,
+   `run_after_zz-summary`) are *always-run* by chezmoi design, not drift.
+   They will appear in `chezmoi status` on every machine, every sync,
+   forever. Reporting them creates recurring noise that dilutes real
+   signal.
+
+Fix: added a pure-bash pre-filter on the `chezmoi status` invocation in
+`home/dot_claude/commands/dotfiles-sync.md` (Step 2, "Config drift").
+The filter cross-references each `.chezmoiscripts/<name>` entry against
+its source filename in `home/.chezmoiscripts/` and suppresses anything
+prefixed `run_before_` or `run_after_`. `run_once_*` and `run_onchange_*`
+entries pass through and are now documented as belonging to the
+"Pending apply" bucket (a `chezmoi apply` will execute and resolve them).
+
+Verified on Mac mini:
+- pre-filter implementation tested live: raw `chezmoi status` returned
+  3 always-run scripts; filtered output empty (matches reality, no real
+  drift).
+- absorbed via `chezmoi re-add ~/.claude/commands/dotfiles-sync.md` so
+  the user-level deployed copy stays in sync with the chezmoi source.
+
+Surfaced for follow-up (not addressed in this commit):
+- `.claude/commands/dotfiles-sync.md` (project-scoped, 422 lines) has
+  diverged substantially from the user-level body (now 642 lines).
+  Project-scoped lacks the `chezmoi status` `R`/`MM` table entirely,
+  so today's misclassification did NOT come from project-scoped. Either
+  delete it or stub-link it to the user-level; user decision.
+- Original sync still has `openai.chatgpt` extension untracked and
+  5 phantom extensions in `extensions.txt` (not installed). User
+  classification deferred.
+
+Cross-machine impact: skill body lives in chezmoi source, deploys to
+all machines on next `chezmoi apply`.
+
+---
+
 ## [2026-05-09] fix: consolidate /dotfiles-sync op calls + zsh nullglob safety @ Mac mini
 
 User flagged two bugs during today's second sync run:

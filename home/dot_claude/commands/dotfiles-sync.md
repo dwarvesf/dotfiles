@@ -12,7 +12,27 @@ Run these detection commands in parallel where possible:
 
 ### Config drift
 ```bash
-chezmoi status 2>/dev/null
+# Pre-filter: suppress always-run scripts (run_before_* / run_after_*) which
+# show up on EVERY apply by design, so they are not actionable drift. Keep
+# run_once_* and run_onchange_* entries as real "Pending apply" signals.
+chezmoi status 2>/dev/null | while IFS= read -r line; do
+  code="${line:0:2}"
+  path="${line:3}"
+  if [[ "$path" == .chezmoiscripts/* ]]; then
+    base="${path#.chezmoiscripts/}"
+    src=""
+    for f in home/.chezmoiscripts/*; do
+      fn="${f##*/}"
+      if [[ "$fn" == *"_$base" || "$fn" == *"_$base.tmpl" ]]; then
+        src="$fn"; break
+      fi
+    done
+    case "$src" in
+      run_before_*|run_after_*) continue ;;  # always-runs, not drift
+    esac
+  fi
+  printf '%s\n' "$line"
+done
 ```
 
 `chezmoi status` prints `XY PATH` where X = source state since last apply, Y = destination state since last apply. Interpret each code into a sync direction so the report can group correctly:
@@ -28,6 +48,17 @@ chezmoi status 2>/dev/null
 | `MM` / `AM` | both sides changed | needs manual reconcile | **Conflict** (`‼`) |
 
 For every `MM` and any ambiguous case, **re-derive direction** with `bash -c 'diff <(chezmoi cat ~/PATH) ~/PATH'` before reporting. Don't trust the code alone.
+
+**Special case: `.chezmoiscripts/<name>` entries.** chezmoi reports `R` here for any script that *will run* on the next apply, not for drift. Resolve via the source filename's prefix in `home/.chezmoiscripts/`:
+
+| Source prefix | Behavior | Report as |
+|---|---|---|
+| `run_before_*` | runs before every apply, always | **suppress** (handled by pre-filter above) |
+| `run_after_*` | runs after every apply, always | **suppress** (handled by pre-filter above) |
+| `run_once_*` | only shows `R` if not yet recorded in state DB | **Pending apply** (`apply` will execute + record) |
+| `run_onchange_*` | only shows `R` when rendered hash differs | **Pending apply** (`apply` will execute + re-record) |
+
+Never report a `.chezmoiscripts/*` entry under "Drift to absorb." Scripts don't deploy files; they execute. The right verb is "pending apply," and the action is `chezmoi apply`.
 
 ### Brew packages
 ```bash
