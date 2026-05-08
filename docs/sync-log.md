@@ -6,6 +6,48 @@ context.
 
 ---
 
+## [2026-05-09] S-61 ship: `secret-cache-read --batch` mode (~15 ms fish-startup win) @ Mac mini
+
+Fresh implementation merging the original `perf/batch-secret-cache`
+branch's `--batch` mode (drafted as S-55 in 2026-05-07) on top of
+main's evolved single-pair script (negative-cache + `-A` flag from
+S-49 / S-51 work).
+
+The original PR #78 branch could not be cleanly rebased: main had
+substantively evolved the single-pair logic since the branch was cut.
+Rather than wrestle a 4-way conflict, wrote a fresh
+`perf/secret-cache-batch` branch that:
+- Keeps main's negative-cache (24h TTL) and `-A` flag, refactored
+  into a `_load_one` helper.
+- Adds the original branch's `--batch VAR1 REF1 ...` mode using
+  `_load_one` per pair.
+- Preserves SA-token-first ordering via a two-pass loop inside the
+  batch handler (no longer needs the template-time conditional).
+- Switches `secrets.fish.tmpl` to one batched invocation.
+
+Renumbered to avoid collision: this work was originally S-55 on the
+old branch, but `S-55-claude-md-modify-idempotency` shipped earlier
+today (v0.6.0). New canonical id is S-61.
+
+PR #77 (originally S-54, the SA-token-first ordering reorder) was
+closed as superseded: its code change was already in main via
+commit 7c4ffc4 (refactor/op-vault-split, 2026-05-08). PR #78 will be
+closed as superseded by the fresh branch once merged.
+
+Verified on Mac mini:
+- shellcheck clean on `home/dot_local/bin/executable_secret-cache-read`.
+- `chezmoi execute-template` renders cleanly; `fish -n` clean on output.
+- `chezmoi apply` deploys both files.
+- `fish -l -c '...'` populates all 4 secrets:
+  OP_SERVICE_ACCOUNT_TOKEN (860), CLOUDFLARE_API_TOKEN (53),
+  R2_ACCESS_KEY_ID (32), R2_SECRET_ACCESS_KEY (64).
+
+Spec: [S-61](specs/S-61-batch-secret-cache-read.md). Cross-machine
+impact: Mac Air M4 inherits the new batched template + script next
+sync.
+
+---
+
 ## [2026-05-09] S-59 ship: `# Machines I work from` synced with ops-toolkit @ Mac mini
 
 User flagged that `tieubao/ops-toolkit` had updates affecting the Machines

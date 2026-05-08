@@ -1,6 +1,6 @@
 # Task Backlog: dwarvesf/dotfiles
 
-Updated: 2026-05-09 (S-59 shipped, v0.6.1 patch release)
+Updated: 2026-05-09 (S-61 shipped, queued for v0.6.2 patch release)
 
 > **Versioning note:** the next release after v0.6.0 ships as **v0.6.1**, not v0.7.0. Default to patch bumps for incremental sync work, prompt copy-edits, doc syncs, small fixes. Reserve minor bumps (v0.X.0) for genuinely new surfaces or breaking changes. Major bumps (v1.0.0) are reserved for "stable, ready for others." Mostly the repo will keep climbing in patch.
 
@@ -68,6 +68,7 @@ Updated: 2026-05-09 (S-59 shipped, v0.6.1 patch release)
 - [x] S-57: `dotfiles ssh audit` strips `OP_SERVICE_ACCOUNT_TOKEN` explicitly so it always queries via biometric (the S-49 op interceptor only strips when `status is-interactive`; the audit is reached from non-interactive contexts where the SA-scoped session can't see Private vault, producing misleading "(no SSH Key items in vault)" + bogus unbacked-key nag. Fix is local to the audit case: 3 `op` invocations now use `env -u OP_SERVICE_ACCOUNT_TOKEN command op`. Mac mini: audit now correctly reports 3 SSH keys in Private and `✓ all 2 disk key(s) have a 1P counterpart`.)
 - [x] S-58: Per-machine `Host github.com` block in dotfiles ssh config (S-53 ratify) (the S-53 recipe writes the github block directly to `~/.ssh/config` on the machine; today's broad chezmoi apply clobbered it. Added the block to `home/dot_ssh/config.tmpl` template-conditional on `~/.ssh/id_ed25519_github` existing — fresh machines without S-53 done get 1P agent fallback instead of broken github SSH. Verified on Mac mini: block deploys, idempotent, `ssh -T git@github.com` authenticates as `tieubao`.)
 - [x] S-59: Sync `# Machines I work from` table with ops-toolkit canonical updates. Mini hostname `mac-mini-danang` (Tailscale FQDN) per SPEC-002; daemon namespace split (`foundation.d.*` Dwarves-tenant, `mini.*` personal-Mini per dfoundation ADR-0020 + SPEC-054); new iphone row for the SPEC-002 mobile pilot path; substrate pointers updated to `ops-toolkit/tools/{mac-mini-substrate,mac-backup}/`. Verified on Mac mini: 246 -> 248 lines stable across 3 applies; zero em dashes in changed region.
+- [x] S-61: `secret-cache-read --batch` collapses N forks into one (~15 ms fish-startup win). Adds a `--batch VAR1 REF1 ...` mode to the cache-read script that resolves N pairs in one bash invocation, emitting NUL-separated `VAR\0VALUE` pairs. Internal two-pass loop resolves OP_SERVICE_ACCOUNT_TOKEN first so subsequent op-read fallbacks have bearer auth. Preserves negative-cache (24h TTL) + `-A` flag from main. `secrets.fish.tmpl` switches to one batched call. Originally drafted as S-55 on `perf/batch-secret-cache`; renumbered S-61 to avoid collision with S-55-claude-md-modify-idempotency. Verified on Mac mini: all 4 secrets populate via new path (lengths check); rendered template fish-syntax clean; shellcheck clean.
 
 ## Next up
 
