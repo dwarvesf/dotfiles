@@ -28,7 +28,7 @@ abbrev_path() {
   if [ "$p" = "$HOME" ]; then
     echo "~"; return
   elif [[ "$p" == "$HOME/"* ]]; then
-    p="${p#$HOME/}"
+    p="${p#"$HOME"/}"
   elif [ "$p" = "/" ]; then
     echo "/"; return
   else
