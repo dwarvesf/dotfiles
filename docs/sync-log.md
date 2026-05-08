@@ -6,6 +6,36 @@ context.
 
 ---
 
+## [2026-05-08] op-vault-split: Trading→Toolkit + new Trading + SA rotation @ Mac-mini
+
+First application of S-46 multi-vault tiering. Old `Trading` vault renamed to
+`Toolkit` (Infra tier per S-46); new `Trading` vault created (Primary domain
+tier) holding 5 actual trading items. Items renamed: `Cloudflare R2` → `cf-r2`,
+`Cloudflare API Token` → `cf-api-token`. SA renamed `op-service-account-trading`
+→ `op-service-account-ops`, bearer rotated, granted Read on both vaults.
+
+Full migration record: [`operations/2026-05-08-op-vault-toolkit-trading-split.md`](operations/2026-05-08-op-vault-toolkit-trading-split.md).
+
+Secrets:
+  - 4 Keychain entries flushed and re-seeded with new vault refs
+  - `secrets.toml` flipped: `Toolkit/cf-api-token`, `Toolkit/cf-r2/{username,credential}`, `Private/op-service-account-ops`
+  - Fish login back to ~100ms (was 2.6s pre-migration; root cause was a stale ref from the morning's Private→Trading commit pair `7c4ffc4`/`6db9ad3`)
+
+Repos migrated (5 branches, none pushed):
+  - `tieubao/dotfiles@feat/multi-machine-op` — `7e2be47` runtime + `35d2526` docs sweep + this commit closing S-46
+  - `tieubao/ops-toolkit@refactor/op-vault-split` — `7954df6`, 65 files
+  - `tieubao/dfoundation@refactor/op-vault-split` — `952abcd`, 30 files
+  - `tieubao/trading@refactor/op-vault-split` — `e9ca4f8`, 46 files (5 keepers preserved at `op://Trading/`)
+  - `tieubao/event-bridge@refactor/op-vault-split` — `9fab388`, 12 files incl. `wrangler.toml`
+
+Mac Mini Phase 3 deploy (separate chat, on-Mini): rsync of `tools/{mac-mini-substrate,mac-backup}/` from tieubao→server; surgical sed on `dfoundation/infra/substrate/mac-mini/hermes-insights-digest.sh` with `.bak.pre-vault-split-2026-05-08` recovery point. `mini.upgrade-check` smoke-fired green. Surfaced finding: daemon-context `op read` was never load-bearing — static-file fallbacks have been carrying the load all along.
+
+Specs:
+  - S-46 status flipped `proposed` → `done` with Implementation section pointing at this record + the 5 commits
+  - April migration record (`2026-04-1password-infra-vault-migration.md`) marked superseded — its planned `Infra` vault never landed; today's split with `Toolkit`/`Trading` is the actual implementation
+
+---
+
 ## [2026-05-07] S-51 SSH/mosh smoke-test failure traced to Security Session model @ Mac-mini
 
 Ran [`docs/operations/2026-05-mini-sa-seed.md`](operations/2026-05-mini-sa-seed.md)

@@ -2,8 +2,16 @@
 title: 1Password Infra vault migration
 date: 2026-04-24
 related_spec: S-46
-status: planned
+status: superseded
+superseded_by: 2026-05-08-op-vault-toolkit-trading-split.md
 ---
+
+> **Superseded.** This planning doc proposed a `Private` → `Infra` move. It was
+> never executed as drafted. The actual S-46 implementation landed 2026-05-08
+> with different naming (`Toolkit` instead of `Infra`, plus a separate new
+> `Trading` vault for the 5 trading keepers). See the linked record for what
+> actually happened.
+
 
 # 1Password Infra vault migration (April 2026)
 
