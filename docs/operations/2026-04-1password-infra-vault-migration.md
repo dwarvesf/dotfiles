@@ -2,8 +2,16 @@
 title: 1Password Infra vault migration
 date: 2026-04-24
 related_spec: S-46
-status: planned
+status: superseded
+superseded_by: 2026-05-08-op-vault-toolkit-trading-split.md
 ---
+
+> **Superseded.** This planning doc proposed a `Private` → `Infra` move. It was
+> never executed as drafted. The actual S-46 implementation landed 2026-05-08
+> with different naming (`Toolkit` instead of `Infra`, plus a separate new
+> `Trading` vault for the 5 trading keepers). See the linked record for what
+> actually happened.
+
 
 # 1Password Infra vault migration (April 2026)
 
@@ -45,7 +53,7 @@ Personal migration record for applying the [S-46](../specs/S-46-three-vault-mode
 ## Verification checklist
 
 - [ ] `op read op://Infra/cloudflare-api-token/credential` returns the token from a fresh Claude Code session (no scope denial).
-- [ ] `op read op://Private/op-service-account-trading/credential` still returns scope denial (SA remains blind to its own storage).
+- [ ] `op read op://Private/op-service-account-ops/credential` still returns scope denial (SA remains blind to its own storage).
 - [ ] `tieubao/trading/operations/scripts/verify-op-trading-access.sh` exits 0 / 5 of 5 (no regression on trading-vault access).
 - [ ] `wrangler deploy` from agent shell still works (CF token still loads via fish env; env-inherit path unchanged).
 - [ ] SPEC-019 §2.1 + broker-access.md updated and committed in trading repo.

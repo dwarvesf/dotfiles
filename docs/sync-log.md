@@ -6,6 +6,220 @@ context.
 
 ---
 
+## [2026-05-08] op-vault-split: Trading→Toolkit + new Trading + SA rotation @ Mac-mini
+
+First application of S-46 multi-vault tiering. Old `Trading` vault renamed to
+`Toolkit` (Infra tier per S-46); new `Trading` vault created (Primary domain
+tier) holding 5 actual trading items. Items renamed: `Cloudflare R2` → `cf-r2`,
+`Cloudflare API Token` → `cf-api-token`. SA renamed `op-service-account-trading`
+→ `op-service-account-ops`, bearer rotated, granted Read on both vaults.
+
+Full migration record: [`operations/2026-05-08-op-vault-toolkit-trading-split.md`](operations/2026-05-08-op-vault-toolkit-trading-split.md).
+
+Secrets:
+  - 4 Keychain entries flushed and re-seeded with new vault refs
+  - `secrets.toml` flipped: `Toolkit/cf-api-token`, `Toolkit/cf-r2/{username,credential}`, `Private/op-service-account-ops`
+  - Fish login back to ~100ms (was 2.6s pre-migration; root cause was a stale ref from the morning's Private→Trading commit pair `7c4ffc4`/`6db9ad3`)
+
+Repos migrated (5 branches, none pushed):
+  - `tieubao/dotfiles@feat/multi-machine-op` — `7e2be47` runtime + `35d2526` docs sweep + this commit closing S-46
+  - `tieubao/ops-toolkit@refactor/op-vault-split` — `7954df6`, 65 files
+  - `tieubao/dfoundation@refactor/op-vault-split` — `952abcd`, 30 files
+  - `tieubao/trading@refactor/op-vault-split` — `e9ca4f8`, 46 files (5 keepers preserved at `op://Trading/`)
+  - `tieubao/event-bridge@refactor/op-vault-split` — `9fab388`, 12 files incl. `wrangler.toml`
+
+Mac Mini Phase 3 deploy (separate chat, on-Mini): rsync of `tools/{mac-mini-substrate,mac-backup}/` from tieubao→server; surgical sed on `dfoundation/infra/substrate/mac-mini/hermes-insights-digest.sh` with `.bak.pre-vault-split-2026-05-08` recovery point. `mini.upgrade-check` smoke-fired green. Surfaced finding: daemon-context `op read` was never load-bearing — static-file fallbacks have been carrying the load all along.
+
+Specs:
+  - S-46 status flipped `proposed` → `done` with Implementation section pointing at this record + the 5 commits
+  - April migration record (`2026-04-1password-infra-vault-migration.md`) marked superseded — its planned `Infra` vault never landed; today's split with `Toolkit`/`Trading` is the actual implementation
+
+---
+
+## [2026-05-07] S-51 SSH/mosh smoke-test failure traced to Security Session model @ Mac-mini
+
+Ran [`docs/operations/2026-05-mini-sa-seed.md`](operations/2026-05-mini-sa-seed.md)
+end-to-end on the Mac Mini, sitting at the GUI. Steps 1-4 passed. Step 5
+(cross-machine smoke test from iOS mosh) **failed** with a 1Password CLI
+integration popup ("Allow mosh-server to get CLI access") on the Mini's
+screen.
+
+Setup completed (Steps 1-4):
+  - `feat/multi-machine-op` checked out on Mini (PR #76 not yet merged).
+  - `chezmoi apply` on the three S-51 files (`secrets.fish`,
+    `secret-cache-read`, `dotfiles.fish`).
+  - `login.keychain-db` seeded with `OP_SERVICE_ACCOUNT_TOKEN` (`-A` ACL)
+    via `env -u OP_SERVICE_ACCOUNT_TOKEN op read | bash -c 'security
+    add-generic-password ... -A -U'`.
+  - Local Step-4 verification all green: `security find-generic-password
+    ... -w | head -c 4` → `ops_`; `fish -l -c 'string sub -l 4 -- "$OP_SERVICE_ACCOUNT_TOKEN"'`
+    → `ops_`; `fish -l -c 'bash -c "op whoami | grep User Type"'` →
+    `User Type: SERVICE_ACCOUNT`.
+
+Step-5 failure diagnostic from iOS mosh on the Mini:
+  - `status is-login` → TRUE (gate works as designed).
+  - `status is-interactive` → TRUE.
+  - `string length -- "$OP_SERVICE_ACCOUNT_TOKEN"` → 0 (loader produced
+    no value).
+  - `security find-generic-password ... -w 2>&1`
+    → `security: SecKeychainSearchCopyNext: The specified item could not
+    be found in the keychain.` (misleading — entry is present and was
+    just seeded; locked keychain reports items as not-found).
+  - `security show-keychain-info ~/Library/Keychains/login.keychain-db
+    2>&1` → `security: SecKeychainCopySettings ...: User interaction
+    is not allowed.` (canonical macOS error for "this keychain is
+    locked in this session and cannot be unlocked from a non-GUI
+    context").
+
+Root cause:
+  - macOS holds keychain unlock state **per Security Session**, not per
+    user. sshd- and mosh-server-spawned children run in a different
+    Security Session than the console GUI session. Auto-login keeps the
+    console session's keychain unlocked but does not propagate that
+    state to subsequent SSH/mosh Security Sessions.
+  - `secret-cache-read` swallows the failed Keychain read (`2>/dev/null`)
+    and falls through to `op read`. Because `OP_SERVICE_ACCOUNT_TOKEN`
+    is not yet in env (it is what we are trying to load), `op read` has
+    no auth and contacts the 1Password desktop CLI integration socket,
+    which raises the popup at fish startup.
+  - Same path is shared by `CLOUDFLARE_API_TOKEN` and `R2_*` via
+    `secret-cache-read`: they fail under SSH/mosh on $SECONDARY for
+    the same structural reason.
+
+Spec gap recorded:
+  - `docs/specs/S-51-multi-machine-sa-access.md` §"Operational
+    prerequisite" (lines 144-152) is incorrect. **Errata appended**;
+    original prose preserved.
+  - `docs/operations/2026-05-mini-sa-seed.md` got a status banner
+    flagging Step 5 as not reachable.
+  - `docs/1password-multi-machine.md` "Boot-time keychain lock" got an
+    inline Note callout above the trade-off table.
+  - `docs/secrets-architecture.md` Q10 status updated from open to moot
+    (the question's framing assumed auto-login was a working
+    mitigation).
+  - `docs/tasks.md` S-51 entry marked with the finding.
+
+What S-51 does still deliver correctly:
+  - Gate widening (`is-interactive` → `is-login`) works under SSH and
+    mosh.
+  - `dotfiles secret push` seeds remote Keychain successfully.
+  - `-A` ACL on the entry is correct.
+
+What it does not deliver:
+  - A no-popup SSH/mosh experience on $SECONDARY using only the login
+    Keychain as backing store. The Security Session model makes that
+    unreachable.
+
+Fix path: TBD. Four candidates evaluated; **none chosen yet**:
+  1. 0600 file at `~/.config/op/service_account_token`.
+  2. System keychain entry.
+  3. Per-user LaunchAgent serving via Unix socket.
+  4. 1Password Connect local Docker.
+
+This sync was documentation-only. No code changes. No commits to
+`secrets.fish.tmpl`, `secret-cache-read`, `secrets.toml`, or
+`dotfiles secret push`. The fix gets its own spec.
+
+---
+
+## [2026-05-07] S-52 secrets architecture synthesis doc @ Hans Air M4
+
+Shipped the synthesis doc that maps the whole secrets / keys / credentials
+problem space, sitting above the 13-spec chain. Triggered by the question
+"have we settled this?" — the honest answer was no, only a slice. The
+synthesis doc makes the gap explicit and forces the prioritization
+conversation.
+
+New files:
+  - `docs/secrets-architecture.md`: threat model (6 adversary scenarios),
+    credential taxonomy (6 classes), device taxonomy (5 classes incl.
+    open Linux/hardware-wallet entries), credential paths (1-5 today plus
+    placeholder for future hardware-wallet path), spec-to-slice mapping
+    for all 13 secrets-related specs, open-questions catalog (10 items
+    each with status / blocker / next step), framework-vs-cookbook
+    decision tree, settling status, maintenance contract.
+  - `docs/specs/S-52-secrets-architecture-synthesis-doc.md`: spec defining
+    the doc's contents, acceptance criteria, and 4 verification tests.
+    Status: done.
+
+Modified docs:
+  - `docs/1password.md`: spec chain table extended with S-52, plus a
+    pointer at the top of the chain area to the synthesis doc as the
+    whole-surface entry point.
+  - `docs/1password-multi-machine.md`: synthesis doc added to "See also"
+    as the first entry.
+  - `README.md`: docs table extended with the synthesis doc and the
+    multi-machine doc (the latter was missing from README's table
+    despite existing).
+  - `docs/tasks.md`: S-52 appended to completed list.
+
+Modified discipline test:
+  - `scripts/test-doc-discipline.sh`: FRAMEWORK_DOCS now includes
+    `docs/secrets-architecture.md` and `docs/specs/S-52-*.md`. Test still
+    passes (doc is placeholder-clean by design).
+
+Verification:
+  - `./scripts/test-doc-discipline.sh`: ✓ Doc discipline contract holds.
+  - All 13 secrets-related specs referenced in the synthesis doc.
+  - All cross-references present (1password.md, 1password-multi-machine.md,
+    operations/2026-05-mini-sa-seed.md).
+  - Back-links from README, 1password.md, 1password-multi-machine.md to
+    synthesis doc all present.
+
+---
+
+## [2026-05-07] S-51 multi-machine SA access @ Hans Air M4
+
+Shipped the multi-machine extension to S-49's dual-mode `op` design.
+Originated from a session about SSH-into-Mini breaking 1P biometric flows.
+Two minimal changes inside the dotfiles surface, plus two new docs.
+
+Changes:
+  - `home/dot_config/fish/conf.d/secrets.fish.tmpl`: gate widened from
+    `if status is-interactive` to `if status is-login`. Non-interactive
+    SSH login shells (`ssh user@host '<cmd>'`) now load the SA token,
+    so subprocess `op read` works headlessly from the remote side.
+    Added a comment block referencing S-51 for the rationale.
+  - `home/dot_config/fish/functions/dotfiles.fish`: new `secret push VAR
+    ssh-target` sub-command. Reads locally via `op read` (S-49 interceptor
+    routes through biometric for full vault scope), pipes the value over
+    SSH stdin (never on the command line), writes to the remote login
+    keychain via `security add-generic-password -U`. Pre-flight SSH probe
+    refuses to leak the value if the target is unreachable.
+
+New docs:
+  - `docs/1password-multi-machine.md`: companion to docs/1password.md.
+    Covers the 4 credential paths, the 3 gates at fish login, per-
+    environment state matrix (Air-GUI / Mini-GUI / SSH-from-Air /
+    SSH-from-iOS / post-reboot), the seed-from-Air recipe, the boot-
+    time keychain-lock mitigations, iOS SSH (Termius/Blink) support
+    matrix including the `git push` gap, and the web3 hardening rule
+    (signing material never in SA-readable vaults).
+  - `docs/specs/S-51-multi-machine-sa-access.md`: spec proper, format
+    matching S-49/S-50. Status: done after Air-side regression passed.
+
+Touched docs:
+  - `docs/1password.md`: added a Multi-machine pointer section after
+    "Trade-offs accepted", and added S-51 to the spec chain table.
+  - `docs/tasks.md`: appended S-51 to completed list.
+  - `README.md`: small addendum to the Security/dual-mode paragraph
+    pointing at the multi-machine doc.
+
+Operational notes:
+  - The Mini's login keychain auto-lock at reboot is documented as an
+    operational decision (auto-login or manual GUI login post-reboot),
+    not a dotfiles change.
+  - iOS-driven `git push` from Mini is documented as a future option
+    (per-iOS-app SE-bound key registered with GitHub). Not implemented.
+  - Mini-side seeding deferred: this commit ships the helper and the
+    code change; the actual seed run happens when the user requests it.
+
+Verification (Air-side):
+  - `fish -n` on dotfiles.fish: clean.
+  - regression test plan tests 1-4 from S-51 to be run before commit.
+
+---
+
 ## [2026-05-07] sync @ Hans Air M4
 
 Apply pending PRs landed: chezmoi apply absorbed PR #72 (SSH privacy gate
@@ -75,7 +289,7 @@ ratio for a full rewrite was actually defensible.
 
 Sequence:
   1. Verified backups: 1P Secure Notes `op://Private/SSH config: mini` and
-     `op://Trading/SSH config: trading-egress-tokyo` both readable; on-disk
+     `op://Toolkit/SSH config: trading-egress-tokyo` both readable; on-disk
      `~/.ssh/config.d/mini.local` and `~/.ssh/config.d/trading-egress-tokyo`
      both intact.
   2. Tagged `pre-rewrite-2026-05-05` on origin (backup ref before rewrite).
@@ -164,7 +378,7 @@ untracked drop-ins work for free.
 under the same pattern: contained a public VPS IP, non-standard SSH port,
 and purpose-revealing key name. Now lives only at
 `~/.ssh/config.d/trading-egress-tokyo` on Hans Air M4 with backup at
-`op://Trading/SSH config: trading-egress-tokyo/notesPlain`.
+`op://Toolkit/SSH config: trading-egress-tokyo/notesPlain`.
 
 **Git history:** NOT rewritten. Repo is public, has 2 forks, 6 stars; the
 plaintext blob is in commit `a1f532f` and was likely fetched by watchers
@@ -185,7 +399,7 @@ Changes:
 
 1Password Secure Notes created (Hans Air M4 session):
   - `op://Private/SSH config: mini/notesPlain`
-  - `op://Trading/SSH config: trading-egress-tokyo/notesPlain`
+  - `op://Toolkit/SSH config: trading-egress-tokyo/notesPlain`
 
 Verification: `chezmoi apply --dry-run` shows no drift; `ssh -G mini`
 still resolves to `mac-mini-danang` (the deployed `~/.ssh/config.d/mini.local`
@@ -832,7 +1046,7 @@ so agent subprocess reads fail silently. Service account bearer auth
 bypasses biometric entirely once `OP_SERVICE_ACCOUNT_TOKEN` is in env.
 
 Registered locally (this machine only, per-user action, not shared):
-  - `dotfiles secret add OP_SERVICE_ACCOUNT_TOKEN "op://Private/op-service-account-trading/credential"`
+  - `dotfiles secret add OP_SERVICE_ACCOUNT_TOKEN "op://Private/op-service-account-ops/credential"`
   - Token scoped server-side to the `Trading` vault in 1Password
   - First fish login triggered one biometric; all subsequent shells silent
 
@@ -983,5 +1197,17 @@ Fish functions:
   - removed 5 orphaned standalone functions from machine (add-secret, dfe, dfs, list-secrets, rm-secret)  - consolidated into dotfiles subcommands
 
 Brew/casks: deferred to next sync
+
+---
+
+## [2026-05-08] sync @ Mac-mini
+
+Config:
+  - re-add `~/.claude/statusline-command.sh` — rebuilt as 2-line layout (identity / budget split). Abbreviated path (`w/t/ops-toolkit` instead of `…/workspace/tieubao/ops-toolkit`). `✦` replaces non-rendering NerdFont brain glyph. Effort uses words (`low`/`med`/`high`/`MAX`) instead of bracketed letters. Strips `(1M context)` parenthetical from model display name. Bullet-separated metrics line: `7%  ·  5% 51m  ·  68% 1d8h  ·  Mac-mini`.
+
+Other drift detected but deferred (out of scope for this narrow sync):
+  - `.Brewfile`, `.claude/CLAUDE.md`, `.claude/settings.json` modified
+  - many new `.claude/skills/*` and `.claude/hooks/machine-banner` directories not yet tracked
+  - `.chezmoiscripts/{aa-init,ab-1password-check,brew-bundle}.sh` reported as removed
 
 ---

@@ -20,7 +20,7 @@ Still forbidden (per the project's `secrets — never-paste rule`):
 
 - Raw API keys / OAuth tokens / bearer tokens (any form)
 - Raw HMAC values (the hash is fine; the value is not)
-- 1Password URIs that contain credentials (`op://Trading/foo/api_key` is fine to mention as a reference; the resolved value is not)
+- 1Password URIs that contain credentials (`op://Toolkit/foo/api_key` is fine to mention as a reference; the resolved value is not)
 - Seed phrases, recovery codes, mnemonics
 - Owner PII not already documented in the repo (medical, financial-account-numbers, etc.)
 

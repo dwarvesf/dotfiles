@@ -268,18 +268,106 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                         echo "⚠ could not fetch from 1Password (op not signed in?)"
                     end
 
+                case push
+                    # S-51: seed a remote machine's Keychain with a registered secret's
+                    # value, without requiring biometric on the remote. Read locally via
+                    # `op read` (uses your biometric session on this machine), pipe over
+                    # SSH, write to the remote login keychain via security(1). Idempotent.
+                    if test (count $argv) -lt 4
+                        echo "Usage: dotfiles secret push VAR_NAME ssh-target"
+                        echo "Example: dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN remote-host"
+                        echo ""
+                        echo "  Reads the value from 1Password locally (biometric), pipes over SSH,"
+                        echo "  and writes to the remote user's login keychain. The value never"
+                        echo "  appears on the remote command line or in shell history."
+                        echo "  Re-run after a token rotation to update the remote cache."
+                        return 1
+                    end
+
+                    set -l var $argv[3]
+                    set -l ssh_target $argv[4]
+
+                    set -l data (chezmoi source-path)/.chezmoidata/secrets.toml
+                    if not grep -q "^$var = " $data
+                        echo "✗ $var not registered (see 'dotfiles secret list')"
+                        return 1
+                    end
+
+                    set -l ref (grep "^$var = " $data | sed 's/.*= //;s/"//g')
+
+                    # Force biometric path. Subprocess fish (e.g. invoked from a non-fish
+                    # parent shell) doesn't trigger the S-49 interactive-only interceptor,
+                    # so `op read` would default to bearer auth and fail to read items
+                    # outside the SA's vault scope. The `op://Private/op-service-account-*`
+                    # ref is the canonical example: SA cannot read its own credential by
+                    # design (S-46 defense in depth). Drop the token explicitly so this
+                    # helper always uses the user's full-vault biometric session.
+                    set -l val (env -u OP_SERVICE_ACCOUNT_TOKEN op read "$ref" 2>/dev/null)
+                    if test -z "$val"
+                        echo "✗ op read $ref returned empty (not signed in, wrong ref, or network)"
+                        echo "  Try: eval (op signin) then re-run."
+                        return 1
+                    end
+
+                    # Probe the SSH target before piping the value, so a typo doesn't
+                    # send the secret into a void.
+                    if not ssh -o BatchMode=yes -o ConnectTimeout=5 $ssh_target true 2>/dev/null
+                        echo "✗ cannot reach $ssh_target via SSH (key auth or hostname issue)"
+                        return 1
+                    end
+
+                    # Remote command: invoke bash explicitly so $(cat) works regardless
+                    # of the remote user's login shell. Stdin carries the value. -A is
+                    # required so the entry is readable from any user-owned process
+                    # (GUI fish OR SSH-originated fish), matching `secret-cache-read`'s
+                    # caching ACL. See S-51 multi-machine doc for why.
+                    set -l write_cmd "bash -c 'security add-generic-password -a \"\$USER\" -s \"$var\" -w \"\$(cat)\" -A -U 2>&1'"
+                    set -l write_out (echo -n $val | ssh $ssh_target $write_cmd 2>&1)
+
+                    # Verify by reading back: the prefix of the value should match what
+                    # we sent. Avoids relying on the remote command's exit propagation
+                    # through the SSH login-shell wrapper (which is unreliable for
+                    # bash -c invocations under a fish login shell).
+                    set -l read_cmd "bash -c 'security find-generic-password -a \"\$USER\" -s \"$var\" -w 2>/dev/null | head -c 4'"
+                    set -l read_back (ssh $ssh_target $read_cmd 2>/dev/null)
+                    set -l expected_prefix (string sub -l 4 -- $val)
+
+                    if test "$read_back" = "$expected_prefix"
+                        echo "✓ Seeded $var on $ssh_target. (verified by read-back)"
+                    else
+                        echo "✗ remote keychain write failed."
+                        if string match -q "*Write permissions error*" -- "$write_out"; or string match -q "*User interaction is not allowed*" -- "$write_out"
+                            echo "  Cause: the remote login keychain is locked, and SSH key-auth"
+                            echo "  sessions cannot show the unlock dialog."
+                            echo ""
+                            echo "  Fix one of:"
+                            echo "    1. Walk to $ssh_target and log in at the screen (one-time per reboot)."
+                            echo "    2. Enable auto-login for the user (System Settings → Users & Groups)."
+                            echo "    3. Run from a session that already lives inside the remote GUI"
+                            echo "       login (e.g. tmux attach into a console-launched session)."
+                            echo "  See docs/1password-multi-machine.md for details."
+                        else
+                            echo "  Remote output:"
+                            for line in (string split \n -- $write_out)
+                                echo "    $line"
+                            end
+                        end
+                        return 1
+                    end
+
                 case ''
-                    echo "Usage: dotfiles secret <add|rm|list|refresh>"
+                    echo "Usage: dotfiles secret <add|rm|list|refresh|push>"
                     echo ""
-                    echo "  add VAR \"op://...\"  Register a secret"
-                    echo "  rm VAR              Unregister a secret"
-                    echo "  list                Show all bindings (with cache status)"
-                    echo "  refresh VAR         Clear Keychain cache, re-fetch from 1Password"
-                    echo "  refresh --all       Refresh all cached secrets"
+                    echo "  add VAR \"op://...\"     Register a secret"
+                    echo "  rm VAR                 Unregister a secret"
+                    echo "  list                   Show all bindings (with cache status)"
+                    echo "  refresh VAR            Clear Keychain cache, re-fetch from 1Password"
+                    echo "  refresh --all          Refresh all cached secrets"
+                    echo "  push VAR ssh-target    Seed a remote machine's Keychain (S-51)"
 
                 case '*'
                     echo "Unknown secret command: $argv[2]"
-                    echo "Usage: dotfiles secret <add|rm|list|refresh>"
+                    echo "Usage: dotfiles secret <add|rm|list|refresh|push>"
                     return 1
             end
 

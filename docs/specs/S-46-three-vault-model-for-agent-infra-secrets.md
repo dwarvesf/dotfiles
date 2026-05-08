@@ -2,8 +2,9 @@
 id: S-46
 title: Multi-vault tiering for 1Password service-account scope
 type: feature
-status: proposed
+status: done
 date: 2026-04-24
+implemented: 2026-05-08
 ---
 
 # S-46: Multi-vault tiering for 1Password service-account scope
@@ -93,4 +94,28 @@ Shipping-side checklist (per-owner, per-migration):
 
 ---
 
-**Status note**: proposed. This is a pattern spec; no code changes to the install pipeline are required. Shipping = the owner applies the pattern to their own 1P setup; the migration record lives in `docs/operations/`, not inline here.
+**Status note**: done. Shipping = the owner applies the pattern to their own 1P setup. Migration record below.
+
+## Implementation
+
+Applied 2026-05-08 with these literal vault names:
+
+| S-46 tier | Literal name | Contents |
+|---|---|---|
+| Primary domain | `Trading` (newly created) | `1inch-api`, `binance-live`, `binance-testnet`, `helius-solana-mainnet`, `trading-hot-seed` |
+| Infra / deploy | `Toolkit` (renamed from old `Trading`) | `cf-*`, `notion-*`, `discord-*`, `telegram-*`, `vps-mon-*`, `mac-*`, `hermes-*`, etc. |
+| Personal | `Private` (unchanged) | `op-service-account-ops` SA bootstrap, owner-personal items |
+
+SA renamed `op-service-account-trading` → `op-service-account-ops`, bearer key rotated, granted Read on `{Toolkit, Trading}`. Items `Cloudflare R2` and `Cloudflare API Token` renamed to kebab-case `cf-r2` and `cf-api-token` during the split.
+
+Migration record: [`docs/operations/2026-05-08-op-vault-toolkit-trading-split.md`](../operations/2026-05-08-op-vault-toolkit-trading-split.md).
+
+Code commits across 5 repos (481 line changes / 164 files; all on local branches, none pushed at time of writing):
+
+- `tieubao/dotfiles@feat/multi-machine-op`: `7e2be47` (runtime `secrets.toml` flip) + `35d2526` (docs/SPEC sweep) + this commit (S-46 closure).
+- `tieubao/ops-toolkit@refactor/op-vault-split`: `7954df6` — 65 files.
+- `tieubao/dfoundation@refactor/op-vault-split`: `952abcd` — 30 files.
+- `tieubao/trading@refactor/op-vault-split`: `e9ca4f8` — 46 files (5 keepers preserved at `op://Trading/<x>`).
+- `tieubao/event-bridge@refactor/op-vault-split`: `9fab388` — 12 files incl. `wrangler.toml`.
+
+The April planning doc (`2026-04-1password-infra-vault-migration.md`) was never executed as drafted — its planned `Infra` vault did not land. Today's `Toolkit`/`Trading` split is the actual implementation; April record marked superseded.
