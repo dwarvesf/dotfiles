@@ -304,19 +304,15 @@ on $SECONDARY works the same as on $PRIMARY.
 
 ### Boot-time keychain lock
 
-> **Note (2026-05-07):** The "Auto-login the user at boot" option below was
-> empirically tested against an iOS mosh session targeting a Mac Mini and
-> **does not solve the problem**. macOS holds keychain unlock state per
-> Security Session, not per user. SSH and mosh sessions create a fresh
-> Security Session distinct from the console GUI session; auto-login keeps
-> the *console* session's keychain unlocked but does not propagate that
-> state to subsequent SSH/mosh sessions. The "Walk over and log in" option
-> has the same limitation: it unlocks the console session's keychain, not
-> SSH-spawned session keychains. See
-> [S-51 errata 2026-05-07](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)
-> for the empirical evidence. The "never-locking keychain" option (the
-> third row) remains unverified; it may or may not cross the Security
-> Session boundary either.
+> **Resolved by [S-53](specs/S-53-headless-mac-credential-pattern.md) (2026-05-08).**
+> Login keychain unlock state is per-Security-Session, not per-user, so
+> SSH/mosh sessions see a locked keychain regardless of console GUI state
+> (originally documented in [S-51 errata 2026-05-07](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)).
+> S-53 moves the SA token to System.keychain, which has no per-session
+> unlock requirement, and adds a per-machine SSH-key recipe so outbound
+> `git` over SSH works without agent forwarding (which mosh strips). The
+> three options in the table below are now of historical interest only —
+> none of them actually fix SSH/mosh access. Apply S-53 instead.
 
 Three options, in order of preference for a personal home setup:
 

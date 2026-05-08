@@ -1,15 +1,16 @@
 # 2026-05 mini SA token seed (S-51 rollout)
 
-> **Status (2026-05-07): partially valid.** Steps 1-4 work as written and
-> successfully seed the SA token into the Mini's login Keychain. **Step 5**
-> (the cross-machine smoke test) fails in practice when the SSH client is
-> iOS mosh (and likely any SSH transport): the 1Password CLI integration
-> popup still appears on the Mini's screen because macOS keychain unlock
-> state does not propagate from the console GUI session to SSH/mosh
-> Security Sessions. **Step 6** (auto-login) does not fix this either.
-> Use this runbook for the seed itself; do not treat the green Step-5
-> outcome as reachable until the follow-up fix lands. See
-> [S-51 errata 2026-05-07](../specs/S-51-multi-machine-sa-access.md#errata-2026-05-07).
+> **Status (2026-05-08): superseded for the SSH/mosh path.** Steps 1-4
+> seed the SA token into the user's login Keychain successfully, but
+> [S-51 errata 2026-05-07](../specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)
+> showed that login.keychain is unreachable from SSH/mosh sessions due to
+> per-Security-Session unlock state. Step 5 (the cross-machine smoke test)
+> and Step 6 (auto-login as mitigation) do not work.
+> **[S-53](../specs/S-53-headless-mac-credential-pattern.md) is the
+> canonical pattern**: System.keychain backing store for the SA token plus
+> a per-machine SSH key for outbound `git`. Apply S-53 instead of this
+> runbook for any new headless Mac. This file is preserved for historical
+> context; do not extend it.
 
 Operations runbook to seed `OP_SERVICE_ACCOUNT_TOKEN` into the Mac Mini's
 login Keychain and bring [S-51](../specs/S-51-multi-machine-sa-access.md)
