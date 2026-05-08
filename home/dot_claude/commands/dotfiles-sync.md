@@ -12,7 +12,27 @@ Run these detection commands in parallel where possible:
 
 ### Config drift
 ```bash
-chezmoi status 2>/dev/null
+# Pre-filter: suppress always-run scripts (run_before_* / run_after_*) which
+# show up on EVERY apply by design, so they are not actionable drift. Keep
+# run_once_* and run_onchange_* entries as real "Pending apply" signals.
+chezmoi status 2>/dev/null | while IFS= read -r line; do
+  code="${line:0:2}"
+  path="${line:3}"
+  if [[ "$path" == .chezmoiscripts/* ]]; then
+    base="${path#.chezmoiscripts/}"
+    src=""
+    for f in home/.chezmoiscripts/*; do
+      fn="${f##*/}"
+      if [[ "$fn" == *"_$base" || "$fn" == *"_$base.tmpl" ]]; then
+        src="$fn"; break
+      fi
+    done
+    case "$src" in
+      run_before_*|run_after_*) continue ;;  # always-runs, not drift
+    esac
+  fi
+  printf '%s\n' "$line"
+done
 ```
 
 `chezmoi status` prints `XY PATH` where X = source state since last apply, Y = destination state since last apply. Interpret each code into a sync direction so the report can group correctly:
@@ -28,6 +48,17 @@ chezmoi status 2>/dev/null
 | `MM` / `AM` | both sides changed | needs manual reconcile | **Conflict** (`‼`) |
 
 For every `MM` and any ambiguous case, **re-derive direction** with `bash -c 'diff <(chezmoi cat ~/PATH) ~/PATH'` before reporting. Don't trust the code alone.
+
+**Special case: `.chezmoiscripts/<name>` entries.** chezmoi reports `R` here for any script that *will run* on the next apply, not for drift. Resolve via the source filename's prefix in `home/.chezmoiscripts/`:
+
+| Source prefix | Behavior | Report as |
+|---|---|---|
+| `run_before_*` | runs before every apply, always | **suppress** (handled by pre-filter above) |
+| `run_after_*` | runs after every apply, always | **suppress** (handled by pre-filter above) |
+| `run_once_*` | only shows `R` if not yet recorded in state DB | **Pending apply** (`apply` will execute + record) |
+| `run_onchange_*` | only shows `R` when rendered hash differs | **Pending apply** (`apply` will execute + re-record) |
+
+Never report a `.chezmoiscripts/*` entry under "Drift to absorb." Scripts don't deploy files; they execute. The right verb is "pending apply," and the action is `chezmoi apply`.
 
 ### Brew packages
 ```bash
@@ -116,48 +147,58 @@ comm -23 <(ls ~/.claude/skills/ 2>/dev/null | sort) \
               | sort -u)
 ```
 
-### SSH fragment backup status (notify-only)
+### SSH backup status (notify-only, consolidated)
 ```bash
-# Surface ~/.ssh/config.d/*.local fragments that have no 1P Secure Note
-# backup. Pattern: a fragment named foo.local should have a corresponding
-# 1P item titled "SSH config: foo" in any vault the user has access to.
-# Notify-only; restoration is a one-line `op read` on fresh-machine bootstrap
-# (see docs/guide.md > "Restore private SSH host fragments").
-if command -v op >/dev/null 2>&1 \
-   && env -u OP_SERVICE_ACCOUNT_TOKEN op account get >/dev/null 2>&1; then
-  unbacked=()
-  for path in ~/.ssh/config.d/*.local; do
-    [ -e "$path" ] || continue
-    name=$(basename "$path" .local)
-    title="SSH config: $name"
-    if ! env -u OP_SERVICE_ACCOUNT_TOKEN op item get "$title" >/dev/null 2>&1; then
-      unbacked+=("$name")
-    fi
-  done
-  if [ "${#unbacked[@]}" -gt 0 ]; then
-    echo "ssh-config: ${#unbacked[@]} private fragment(s) with no 1P backup: ${unbacked[*]}"
-    echo "  (Notification only. To back up: op item create --category 'Secure Note' \\"
-    echo "   --title 'SSH config: <name>' --vault Private \\"
-    echo "   \"notesPlain=\$(cat ~/.ssh/config.d/<name>.local)\")"
-  fi
-fi
-```
-
-### SSH key backup status (notify-only)
-```bash
-# Surface disk SSH keys with no 1Password counterpart. Purely informational:
-# adopting a key into 1P is interactive (confirmation + session) so this
-# never auto-executes, it only nudges. Silent if op is unavailable, not
-# signed in, or the `dotfiles` fish function is not on PATH.
+# Two audits batched in one bash subshell:
+#   1. ~/.ssh/config.d/*.local fragments → matching 1P "SSH config: <name>" notes
+#   2. ~/.ssh/* disk keys → matching 1P SSH Key items (delegated to `dotfiles ssh audit`)
 #
-# S-49: this skill runs inside Claude Code's Bash tool (zsh) which inherits
-# OP_SERVICE_ACCOUNT_TOKEN from the parent fish session. Drop the token
-# before checking `op account get` and running `dotfiles ssh audit` so the
-# audit sees the user's full vault list (SSH keys live in Private), not
-# just the SA-scoped subset.
-if command -v fish >/dev/null 2>&1 && command -v op >/dev/null 2>&1 \
-   && env -u OP_SERVICE_ACCOUNT_TOKEN op account get >/dev/null 2>&1; then
-  AUDIT=$(env -u OP_SERVICE_ACCOUNT_TOKEN fish -l -c 'dotfiles ssh audit' 2>/dev/null)
+# Why one subshell (vs two separate Bash invocations as before):
+#   - `unset OP_SERVICE_ACCOUNT_TOKEN` once → both audits see the user's Private
+#     vault. S-49 dual-mode: SA token can't reach Private where SSH items live.
+#   - `op account get` runs once as the auth gate. ONE biometric prompt; the
+#     resulting op session is reused by every later op call in this subshell.
+#     Previous shape (two Bash blocks × one gate each) prompted up to 3 times
+#     on session-expired runs (2 gates + ≥1 inside `dotfiles ssh audit`).
+#   - `bash <<'EOF'` (heredoc): quoted EOF avoids escaping hell, AND
+#     `shopt -s nullglob` makes the *.local glob expand to nothing instead of
+#     erroring under zsh's default `nomatch`. Bites when CC's Bash tool
+#     routes through zsh and there are zero .local fragments.
+#
+# Notify-only. Restoration of a private fragment is a one-line `op read` on
+# fresh-machine bootstrap (see docs/guide.md > "Restore private SSH host
+# fragments"). Adopting a key into 1P is interactive, never auto-run.
+bash <<'EOF'
+shopt -s nullglob
+unset OP_SERVICE_ACCOUNT_TOKEN
+
+# Auth gate: silent exit if op isn't signed in. Any biometric prompt fires here, once.
+command -v op >/dev/null 2>&1 || exit 0
+op account get >/dev/null 2>&1 || exit 0
+
+# --- 1. SSH config fragment backup status ---
+unbacked=()
+for path in ~/.ssh/config.d/*.local; do
+  name=$(basename "$path" .local)
+  if ! op item get "SSH config: $name" >/dev/null 2>&1; then
+    unbacked+=("$name")
+  fi
+done
+if [ ${#unbacked[@]} -gt 0 ]; then
+  printf 'ssh-config: %d private fragment(s) with no 1P backup: %s\n' \
+    "${#unbacked[@]}" "${unbacked[*]}"
+  printf "  (Notification only. To back up: op item create --category 'Secure Note' \\\\\n"
+  printf "   --title 'SSH config: <name>' --vault Private \\\\\n"
+  printf '   "notesPlain=$(cat ~/.ssh/config.d/<name>.local)")\n'
+fi
+
+# --- 2. SSH disk-key backup status (delegated to fish helper) ---
+# Note: the fish login shell will reload OP_SERVICE_ACCOUNT_TOKEN from
+# Keychain via secrets.fish.tmpl, but fish's `op` interceptor strips it
+# inline (S-49) so `dotfiles ssh audit`'s op calls inherit THIS subshell's
+# biometric session, no extra prompt.
+if command -v fish >/dev/null 2>&1; then
+  AUDIT=$(fish -l -c 'dotfiles ssh audit' 2>/dev/null)
   SUMMARY=$(echo "$AUDIT" | grep -oE '[0-9]+ of [0-9]+ disk key' | head -1)
   if [ -n "$SUMMARY" ]; then
     UNBACKED=$(echo "$SUMMARY" | awk '{print $1}')
@@ -167,12 +208,22 @@ if command -v fish >/dev/null 2>&1 && command -v op >/dev/null 2>&1 \
     fi
   fi
 fi
+EOF
 ```
 
 ### Hardcoded secrets in fish config
 ```bash
-# Look for set -gx with what looks like API keys (long alphanumeric strings)
-grep -n 'set -gx.*[A-Za-z0-9_]\{20,\}' ~/.config/fish/config.fish ~/.config/fish/conf.d/*.fish 2>/dev/null | grep -v 'onepasswordRead\|op://' || true
+# Look for `set -gx` lines with long alphanumeric values that resemble API
+# keys. Wrapped in a bash subshell with `shopt -s nullglob` so an empty
+# conf.d/ doesn't trigger zsh's `nomatch` error when CC's Bash tool routes
+# through zsh (same class of bug fixed for the SSH backup audit).
+bash <<'EOF'
+shopt -s nullglob
+files=( ~/.config/fish/config.fish ~/.config/fish/conf.d/*.fish )
+[ ${#files[@]} -gt 0 ] || exit 0
+grep -n 'set -gx.*[A-Za-z0-9_]\{20,\}' "${files[@]}" 2>/dev/null \
+  | grep -v 'onepasswordRead\|op://' || true
+EOF
 ```
 
 ### Secret cache status (notify-only)
@@ -212,7 +263,7 @@ fi
 ```bash
 # Show what's in .local files for context
 echo "--- ~/.Brewfile.local ---"
-grep -E '^(brew|cask) "' ~/.Brewfile.local 2>/dev/null | sed 's/".*/"/' || echo "(none)"
+grep -E '^(brew|cask) "' ~/.Brewfile.local 2>/dev/null | sed -E 's/^([a-z]+ "[^"]+").*$/\1/' || echo "(none)"
 echo "--- ~/.config/code/extensions.local.txt ---"
 cat ~/.config/code/extensions.local.txt 2>/dev/null || echo "(none)"
 echo "--- ~/.config/fish/config.local.fish ---"

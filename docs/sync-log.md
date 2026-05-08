@@ -6,6 +6,158 @@ context.
 
 ---
 
+## [2026-05-09] consolidate: single canonical /dotfiles-sync body + 2 latent fixes @ Mac mini
+
+User asked for a detailed comparison between the two `dotfiles-sync` skill
+copies on disk: user-level (`~/.claude/commands/dotfiles-sync.md`,
+chezmoi-managed via `home/dot_claude/...`) and project-scoped
+(`.claude/commands/dotfiles-sync.md` in this repo). They had diverged:
+
+- USER had: Step 2 chezmoi-status `R`/`MM` table with chezmoiscripts
+  pre-filter (today's commit 5fbd969); full Step 3 delta-style report
+  spec (sections 3a-3e: width detection, no-markdown-tables rule, visual
+  vocabulary, header block, single-column / two-column layouts). 642 ln.
+- PROJECT had: yesterday's consolidated SSH-backup heredoc (S-49 + zsh
+  nullglob fix from 7b1616e); but missing all of USER's Step 2/3 work,
+  reduced to a 6-line "look for ` M` or `MM`" rule and a 75-line plain-
+  text report template. 422 ln.
+
+Today's run executed USER (only it has the Step 3 layout that produced
+today's dense scannable report). That meant yesterday's heredoc fix was
+NOT actually applied -- I happened to inline a consolidated heredoc at
+execution time. Going forward, future runs from USER would re-introduce
+the multi-prompt and zsh-nomatch bugs.
+
+Fix bundled three things:
+
+1. Ported PROJECT's consolidated SSH-backup heredoc into USER, replacing
+   the two split blocks. Single auth gate, single biometric prompt,
+   `shopt -s nullglob` for empty `*.local` glob, S-49 commentary
+   preserved.
+2. Preempted the same zsh `nomatch` bug in the hardcoded-secrets check:
+   wrapped the `grep ~/.config/fish/conf.d/*.fish` glob in a
+   `bash <<'EOF'` subshell with `shopt -s nullglob`. Yesterday's log
+   flagged this as latent ("safe today, conf.d non-empty"); now closed.
+3. Fixed the Already-local `sed 's/".*/"/'` bug that stripped package
+   names from `~/.Brewfile.local` output. New pattern uses
+   `sed -E 's/^([a-z]+ "[^"]+").*$/\1/'` -- captures `brew "name"` /
+   `cask "app"` and discards trailing comments cleanly. Yesterday's log
+   flagged this as out-of-scope follow-up; now closed.
+
+Then deleted `.claude/commands/dotfiles-sync.md` to stop the divergence.
+USER (deployed via chezmoi from `home/dot_claude/commands/dotfiles-sync.md`)
+is now the single canonical body. The skill auto-suggests on "run
+dotfiles sync" without a project-scoped slash command, as today's
+session already demonstrated.
+
+Verified on Mac mini:
+- shellcheck (--shell=bash) clean on both heredoc bodies.
+- live re-run of all three fixes against this machine: hardcoded-secrets
+  empty (clean), Already-local renders `cask "chrysalis"` cleanly (no
+  truncation), chezmoiscripts pre-filter swallows all noise.
+- `chezmoi apply --dry-run` clean.
+- Skill registry shows ONE `dotfiles-sync` entry (was two pre-delete).
+- `chezmoi re-add` absorbed all edits into source.
+
+Net change: -402 lines (422-line duplicate gone, 41-line SSH-split
+collapsed into 39-line consolidated heredoc + bug fixes).
+
+Cross-machine impact: chezmoi-deployed canonical body propagates on
+next `chezmoi apply` everywhere.
+
+---
+
+## [2026-05-09] fix: /dotfiles-sync filters always-run chezmoi scripts from drift report @ Mac mini
+
+User flagged that today's sync report tagged four `.chezmoiscripts/*.sh`
+entries as `[pseudo-stale]` under "Drift to absorb." That bucket was
+wrong on two counts:
+
+1. Scripts don't deploy files; they execute. There is no destination
+   file to absorb back into source, so "Drift to absorb" is the wrong
+   verb regardless.
+2. Three of the four (`run_before_aa-init`, `run_before_ab-1password-check`,
+   `run_after_zz-summary`) are *always-run* by chezmoi design, not drift.
+   They will appear in `chezmoi status` on every machine, every sync,
+   forever. Reporting them creates recurring noise that dilutes real
+   signal.
+
+Fix: added a pure-bash pre-filter on the `chezmoi status` invocation in
+`home/dot_claude/commands/dotfiles-sync.md` (Step 2, "Config drift").
+The filter cross-references each `.chezmoiscripts/<name>` entry against
+its source filename in `home/.chezmoiscripts/` and suppresses anything
+prefixed `run_before_` or `run_after_`. `run_once_*` and `run_onchange_*`
+entries pass through and are now documented as belonging to the
+"Pending apply" bucket (a `chezmoi apply` will execute and resolve them).
+
+Verified on Mac mini:
+- pre-filter implementation tested live: raw `chezmoi status` returned
+  3 always-run scripts; filtered output empty (matches reality, no real
+  drift).
+- absorbed via `chezmoi re-add ~/.claude/commands/dotfiles-sync.md` so
+  the user-level deployed copy stays in sync with the chezmoi source.
+
+Surfaced for follow-up (not addressed in this commit):
+- `.claude/commands/dotfiles-sync.md` (project-scoped, 422 lines) has
+  diverged substantially from the user-level body (now 642 lines).
+  Project-scoped lacks the `chezmoi status` `R`/`MM` table entirely,
+  so today's misclassification did NOT come from project-scoped. Either
+  delete it or stub-link it to the user-level; user decision.
+- Original sync still has `openai.chatgpt` extension untracked and
+  5 phantom extensions in `extensions.txt` (not installed). User
+  classification deferred.
+
+Cross-machine impact: skill body lives in chezmoi source, deploys to
+all machines on next `chezmoi apply`.
+
+---
+
+## [2026-05-09] fix: consolidate /dotfiles-sync op calls + zsh nullglob safety @ Mac mini
+
+User flagged two bugs during today's second sync run:
+
+1. **Multiple 1Password biometric prompts.** Two separate Bash code blocks
+   in the skill (`SSH fragment backup status` and `SSH key backup status`)
+   each ran their own `env -u OP_SERVICE_ACCOUNT_TOKEN op account get` auth
+   gate. Each gate prompts on session-expired runs; up to 3 prompts total
+   (2 gates + ≥1 inside `dotfiles ssh audit`'s op calls). The two-block
+   shape was inherited; nothing forced them to be separate.
+
+2. **`(eval):4: no matches found: ~/.ssh/config.d/*.local` zsh error.**
+   Claude Code's Bash tool routes through zsh on macOS. zsh's default
+   `nomatch` option errors when a glob expands to nothing. The skill had
+   zero `*.local` SSH fragments on this machine, so the loop body never
+   ran; zsh aborted at line 4 of the eval'd snippet. Cancellation cascaded
+   across the parallel Bash calls in the same batch.
+
+Fix: replaced the two notify-only blocks with one consolidated
+`bash <<'EOF'` heredoc in `.claude/commands/dotfiles-sync.md`. One
+`unset OP_SERVICE_ACCOUNT_TOKEN`, one `op account get` auth gate, one
+biometric prompt. `shopt -s nullglob` makes the empty glob a no-op.
+The fish-l interceptor (S-49) ensures `dotfiles ssh audit`'s nested op
+calls inherit the same biometric session.
+
+Verified on Mac mini:
+- shellcheck (--shell=bash) clean on extracted heredoc body.
+- `bash -n` clean.
+- Live run on this machine: ssh-config audit and ssh-keys audit both
+  silent on success (0 unbacked fragments, 2/2 disk keys backed up).
+  No errors, no prompts (session was active).
+
+Out of scope, flagged for future passes:
+- `~/.Brewfile.local` display has a `sed` bug that strips package names
+  in the `Already local` report section.
+- `~/.config/fish/conf.d/*.fish` glob in the hardcoded-secrets check has
+  the same latent zsh `nomatch` shape; safe today (conf.d is non-empty).
+- "Conditional skip on quiet syncs" was considered but deferred per
+  user choice (single-subshell-batch was the agreed scope).
+
+Cross-machine impact: skill is project-scoped (lives in this repo at
+`.claude/commands/dotfiles-sync.md`), so Mac Air M4 picks up the fix
+the moment it pulls main.
+
+---
+
 ## [2026-05-09] S-61 ship: `secret-cache-read --batch` mode (~15 ms fish-startup win) @ Mac mini
 
 Fresh implementation merging the original `perf/batch-secret-cache`
