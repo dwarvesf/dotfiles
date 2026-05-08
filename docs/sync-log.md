@@ -6,6 +6,112 @@ context.
 
 ---
 
+## [2026-05-08] S-53 ship: System.keychain SA + per-machine SSH key on $SECONDARY @ Hans Air M4
+
+Closed the [S-51 errata](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)
+"Fix space" by picking System.keychain for the SA token (errata candidate 2)
+and pairing it with a per-machine SSH-key recipe for outbound git. Pattern,
+trade-offs, and full test plan live in
+[S-53](specs/S-53-headless-mac-credential-pattern.md); this entry just
+records the rollout.
+
+Per-host changes (machine-local, not chezmoi-managed):
+  - `OP_SERVICE_ACCOUNT_TOKEN` planted in System.keychain via `sudo
+    security add-generic-password ... -A -T /usr/bin/security -T
+    /opt/homebrew/bin/op /Library/Keychains/System.keychain`.
+  - Per-machine `ed25519` key generated inside 1Password
+    (`--ssh-generate-key=ed25519`), private half base64-piped to
+    `~/.ssh/id_ed25519_github` (mode 600), public half registered with
+    the upstream.
+  - `~/.ssh/config` on `$SECONDARY` got a `Host github.com` block with
+    `IdentitiesOnly yes`.
+  - `/etc/paths.d/homebrew` added so non-interactive sessions can find
+    `op`, `brew`, `mosh-server`.
+
+Verification all green from `env -u SSH_AUTH_SOCK ssh -a $SECONDARY` (the
+no-agent context that mosh sessions get): `op whoami` returns SA account
+info with a per-machine Integration ID distinct from `$PRIMARY`'s, `ssh
+-T git@github.com` returns "Hi $USER!", `ssh-add -l` confirms no agent in
+play, `OP_SERVICE_ACCOUNT_TOKEN` length is non-zero.
+
+Footguns hit (now documented in S-53):
+  - `--ssh-generate-key --vault=X` parses the next flag as the key type;
+    use `--ssh-generate-key=ed25519`.
+  - `op read .../private key` returns PKCS#8 by default; OpenSSH needs
+    `?ssh-format=openssh`.
+  - `printf "...\n..."` over fish→ssh→fish corrupts newlines; use
+    single-quoted multi-line string piped via stdin, or base64 for
+    binary content.
+  - SA tokens cannot bridge 1P accounts; vault and SA must share one.
+
+Air's `~/.ssh/config.d/mini.local` was momentarily toggled to
+`ForwardAgent no` to verify `$SECONDARY` self-sufficiency, then reverted.
+Net change on air: none. Forwarding stays on as a safety net; mosh strips
+it anyway, so the iOS path works regardless.
+
+Repo state changes (chezmoi/docs):
+  - `docs/specs/S-53-headless-mac-credential-pattern.md` (new).
+  - `docs/specs/S-51-multi-machine-sa-access.md`: status banner pointing
+    to S-53.
+  - `docs/1password-multi-machine.md`, `docs/secrets-architecture.md`,
+    `docs/operations/2026-05-mini-sa-seed.md`: errata callouts updated
+    to point at S-53 as the resolution.
+  - `docs/tasks.md`: S-53 entry, S-51 follow-up note.
+
+---
+
+## [2026-05-08] S-45 leak event: SA token + OpenAI + Gemini keys via Claude Code session @ Hans Air M4
+
+During an investigation of the `tailscaled` 1P popup on `tieubao@mini` (S-54
+follow-up), the Claude Code session echoed three live secrets to its
+terminal output and the on-disk JSONL transcript:
+
+  1. `OP_SERVICE_ACCOUNT_TOKEN` (op-service-account-trading) — leaked via
+     `fish set -S` introspection inside an `ssh mini-tieubao` diagnostic.
+     `set -S` prints variable values; `string length` should have been used.
+  2. `OPENAI_API_KEY` (sk-proj-...) — leaked via bulk `cat ~/.zshrc` over
+     SSH while enumerating shell-startup `op` invocations on the Mini.
+     The Mini's `.zshrc` had the key hardcoded as a plaintext export
+     (outside the dotfiles secret pipeline).
+  3. `GEMINI_API_KEY` (AIza...) — same root cause, same `cat ~/.zshrc`
+     dump.
+
+Blast radius:
+  - Terminal scrollback on `Hans-Air-M4` (Claude Code session).
+  - Session JSONL transcript at
+    `~/.claude/projects/-Users-tieubao-workspace-tieubao-dotfiles/<sid>.jsonl`
+    (~1 MB, replicated for prompt-cache reuse). 4 occurrences of the SA
+    token, 2 each of OpenAI/Gemini.
+  - SSH/mosh wire path between Air and Mini.
+
+Mitigation taken:
+  - All three keys rotated by the user (OpenAI revoke + new key, Gemini
+    revoke + new key, SA token rotated in 1P web admin).
+  - Live JSONL transcript scrubbed in place via regex redaction
+    (`ops_*`, `sk-proj-*`, full Gemini literal). 9 occurrences replaced
+    with `[REDACTED-S45-LEAK-2026-05-08-*]` markers.
+  - Pre-scrub backup moved to `/tmp` and also redacted (rm blocked by
+    PreToolUse guardrail; redact-in-place was the workable path).
+  - Mini's System.keychain `OP_SERVICE_ACCOUNT_TOKEN` entry to be
+    re-seeded with the new SA token by the user (interactive
+    `read -rs` on the Mini, no chat traversal).
+  - `.zshrc` plaintext OpenAI/Gemini exports flagged as a separate
+    follow-up (Mini's `.zshrc` is not chezmoi-managed; needs migration
+    to the `op://`-ref pipeline or at minimum out of plaintext export).
+
+Process failures recorded:
+  - Verification commands for "is the var populated" should use
+    `string length`, never `set -S` or `echo $VAR`. Add to S-45 guidance.
+  - Bulk `cat ~/.zshrc` for grep purposes is unsafe; use `grep -nE
+    "pattern" file` so terminal output contains only matched lines.
+  - "Read-only investigation" is not safe by default if the read target
+    contains live secrets. Anything cat'ing dotfiles needs an
+    explicit secret-aware filter.
+
+Precedent: 2026-04-23 leak event referenced in S-45 spec.
+
+---
+
 ## [2026-05-08] op-vault-split: Trading→Toolkit + new Trading + SA rotation @ Mac-mini
 
 First application of S-46 multi-vault tiering. Old `Trading` vault renamed to

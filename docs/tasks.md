@@ -1,6 +1,6 @@
 # Task Backlog: dwarvesf/dotfiles
 
-Updated: 2026-05-03 (S-50 shipped)
+Updated: 2026-05-08 (S-53 shipped)
 
 <!-- Old ID → New ID mapping: F-XX/R-XX/T-XX → S-XX. See docs/specs/S-*.md -->
 <!-- S-40 is intentionally unused (number skipped, no spec exists). -->
@@ -57,7 +57,9 @@ Updated: 2026-05-03 (S-50 shipped)
 - [x] S-50: `/dotfiles-sync` detects user-authored Claude skill drift (one-shot absorbed 8 untracked skills + ongoing core/local/skip prompt for new skills; mirrors Brewfile pattern)
 - [x] S-51: Multi-machine SA access (`is-login` gate in secrets.fish + `dotfiles secret push` helper to seed remote Keychain; unblocks SSH-driven `op read` on the Mini without breaking S-49 dual-mode on the Air)
   - 2026-05-07 finding: the no-popup SSH/mosh promise is **not delivered**. macOS keychain unlock state is per-Security-Session, not per-user, so SSH and mosh sessions still see a locked keychain even with the GUI logged in. Implementation (gate widening, push helper, `-A` ACL) is correct; backing-store assumption needs a follow-up. See [S-51 errata 2026-05-07](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07).
+  - 2026-05-08 resolution: S-53 supersedes the SSH/mosh aspect by moving the SA token to System.keychain (no per-Security-Session unlock) and adding a per-machine SSH-key recipe so outbound `git` works without agent forwarding.
 - [x] S-52: Secrets architecture synthesis doc (`docs/secrets-architecture.md`) — the map above the spec chain. Threat model, credential × device × path matrix, spec-to-slice index, open-questions catalog. Backed by `scripts/test-doc-discipline.sh` discipline contract.
+- [x] S-53: Headless Mac credential pattern for SSH/mosh — System.keychain SA token + per-machine SSH key. Closes the S-51 errata "Fix space" by picking the System.keychain candidate and pairing it with a per-host github SSH key recipe (1P-generated ed25519, OpenSSH format, base64-piped to `$SECONDARY`). Result: `op` and `git` work over any SSH transport including iOS mosh, no agent forwarding required.
 
 ## Next up
 

@@ -5,9 +5,18 @@ type: feature
 status: done
 date: 2026-05-07
 extends: S-49
+superseded_by: S-53
 ---
 
 # S-51: Multi-machine SA access for SSH-driven secondary operation
+
+> **Status banner — 2026-05-08:** the [Errata 2026-05-07](#errata-2026-05-07)
+> identified that login keychain is locked under SSH/mosh due to per-Security-
+> Session unlock state. The fix space (System.keychain / file / LaunchAgent /
+> Connect) was deferred. **[S-53](S-53-headless-mac-credential-pattern.md)
+> picks System.keychain and adds the per-machine SSH-key recipe.** Apply S-53
+> for the SSH/mosh path; S-51's gate widening (`is-login`), `secret push`
+> helper, and `-A` ACL all remain correct and load-bearing under S-53.
 
 ## Variables used in this spec
 
