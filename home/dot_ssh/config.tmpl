@@ -16,6 +16,17 @@ Host *
 Host *
   IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 {{- end }}
+{{ if stat (joinPath .chezmoi.homeDir ".ssh/id_ed25519_github") -}}
+# Per-machine GitHub key (S-53 recipe; S-58 ratify). Block deploys only
+# when ~/.ssh/id_ed25519_github exists; fresh machines without S-53 done
+# get the 1P agent fallback (no block, no broken github SSH).
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+{{- end }}
+
 # OrbStack Linux VMs
 Include ~/.orbstack/ssh/config
 

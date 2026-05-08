@@ -25,9 +25,9 @@
 # owned by a separate personal context generator and is preserved verbatim.
 #
 # Idempotent: strips any existing content below the marker on each run,
-# then re-appends the canonical personal sections. If the marker is
-# missing (e.g., fresh machine where the generator has not run yet),
-# the whole input is kept as prefix.
+# then re-appends the canonical personal sections. The script itself
+# emits the marker on first run when absent, so it does not depend on
+# a separate upstream generator. (S-55)
 #
 # Identity values (email + work domains) come from chezmoi data, not
 # hardcoded. Re-run `chezmoi init` to change them.
@@ -39,12 +39,48 @@ MARKER='# --- END claude-context ---'
 if printf '%s' "$INPUT" | grep -qxF "$MARKER"; then
     PREFIX="$(printf '%s' "$INPUT" | awk -v m="$MARKER" '{print} $0 == m {exit}')"
 else
-    PREFIX="$INPUT"
+    # First-run on this machine: marker absent. Append it to the prefix
+    # so subsequent applies find it and idempotency holds. (S-55)
+    PREFIX="$INPUT
+$MARKER"
 fi
 
 printf '%s\n' "$PREFIX"
 
 cat <<'MARKDOWN'
+
+# Personal preferences
+
+Applied to every project. Project-level `CLAUDE.md` files may add on top of these but should not contradict without good reason.
+
+## Tone and feedback
+
+- Be brutally honest. Do not be a yes-man.
+- If I am wrong, point it out bluntly.
+- I need honest feedback on my code, not reassurance.
+- Challenge my reasoning when you see a flaw, even if I seem committed to a direction.
+- Disagreement is useful. Agreement for its own sake is not.
+
+## Formatting
+
+- Do NOT use em dashes in responses. Use commas, colons, parentheses, or separate sentences instead.
+- Prefer short direct sentences over long ones with multiple clauses.
+- No filler, no preamble, no recap of what I just asked.
+
+## Visuals
+
+- I am a visual learner. Lead with a diagram or table before prose when explaining architectures, flows, or comparisons.
+- In terminal output use ASCII / box-drawing diagrams, markdown tables, or tree structures.
+- When generating image, SVG, or PNG artifacts (canvas-design, diagrams, charts), use a **light theme**: light background, dark text and lines.
+- If a concept has no good visual, skip forcing one. Do not invent meaningless diagrams.
+
+## Visual theme defaults (for generated artifacts)
+
+- Background: white (`#ffffff`) or very light gray (`#fafafa`)
+- Primary text: near-black (`#111827`)
+- Lines / borders: dark gray (`#374151`)
+- Accent: a single muted color, not neon
+- Fonts: system sans for UI diagrams, mono for code-adjacent visuals
 
 # Machines I work from
 
