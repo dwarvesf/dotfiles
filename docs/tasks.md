@@ -1,6 +1,8 @@
 # Task Backlog: dwarvesf/dotfiles
 
-Updated: 2026-05-09 (S-59 shipped)
+Updated: 2026-05-09 (S-59 shipped, v0.6.1 patch release)
+
+> **Versioning note:** the next release after v0.6.0 ships as **v0.6.1**, not v0.7.0. Default to patch bumps for incremental sync work, prompt copy-edits, doc syncs, small fixes. Reserve minor bumps (v0.X.0) for genuinely new surfaces or breaking changes. Major bumps (v1.0.0) are reserved for "stable, ready for others." Mostly the repo will keep climbing in patch.
 
 <!-- Old ID → New ID mapping: F-XX/R-XX/T-XX → S-XX. See docs/specs/S-*.md -->
 <!-- S-40 is intentionally unused (number skipped, no spec exists). -->
