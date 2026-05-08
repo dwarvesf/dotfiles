@@ -6,6 +6,52 @@ context.
 
 ---
 
+## [2026-05-09] fix: consolidate /dotfiles-sync op calls + zsh nullglob safety @ Mac mini
+
+User flagged two bugs during today's second sync run:
+
+1. **Multiple 1Password biometric prompts.** Two separate Bash code blocks
+   in the skill (`SSH fragment backup status` and `SSH key backup status`)
+   each ran their own `env -u OP_SERVICE_ACCOUNT_TOKEN op account get` auth
+   gate. Each gate prompts on session-expired runs; up to 3 prompts total
+   (2 gates + ≥1 inside `dotfiles ssh audit`'s op calls). The two-block
+   shape was inherited; nothing forced them to be separate.
+
+2. **`(eval):4: no matches found: ~/.ssh/config.d/*.local` zsh error.**
+   Claude Code's Bash tool routes through zsh on macOS. zsh's default
+   `nomatch` option errors when a glob expands to nothing. The skill had
+   zero `*.local` SSH fragments on this machine, so the loop body never
+   ran; zsh aborted at line 4 of the eval'd snippet. Cancellation cascaded
+   across the parallel Bash calls in the same batch.
+
+Fix: replaced the two notify-only blocks with one consolidated
+`bash <<'EOF'` heredoc in `.claude/commands/dotfiles-sync.md`. One
+`unset OP_SERVICE_ACCOUNT_TOKEN`, one `op account get` auth gate, one
+biometric prompt. `shopt -s nullglob` makes the empty glob a no-op.
+The fish-l interceptor (S-49) ensures `dotfiles ssh audit`'s nested op
+calls inherit the same biometric session.
+
+Verified on Mac mini:
+- shellcheck (--shell=bash) clean on extracted heredoc body.
+- `bash -n` clean.
+- Live run on this machine: ssh-config audit and ssh-keys audit both
+  silent on success (0 unbacked fragments, 2/2 disk keys backed up).
+  No errors, no prompts (session was active).
+
+Out of scope, flagged for future passes:
+- `~/.Brewfile.local` display has a `sed` bug that strips package names
+  in the `Already local` report section.
+- `~/.config/fish/conf.d/*.fish` glob in the hardcoded-secrets check has
+  the same latent zsh `nomatch` shape; safe today (conf.d is non-empty).
+- "Conditional skip on quiet syncs" was considered but deferred per
+  user choice (single-subshell-batch was the agreed scope).
+
+Cross-machine impact: skill is project-scoped (lives in this repo at
+`.claude/commands/dotfiles-sync.md`), so Mac Air M4 picks up the fix
+the moment it pulls main.
+
+---
+
 ## [2026-05-09] S-61 ship: `secret-cache-read --batch` mode (~15 ms fish-startup win) @ Mac mini
 
 Fresh implementation merging the original `perf/batch-secret-cache`
