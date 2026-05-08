@@ -1005,19 +1005,25 @@ function dotfiles -d "Manage dotfiles via chezmoi"
 
                     echo "[3] SSH keys in 1Password (vault: $vault_default)"
                     echo "-----------------------------------------------------------"
+                    # S-57: strip OP_SERVICE_ACCOUNT_TOKEN explicitly so the audit
+                    # always queries via biometric (the user's full-vault scope).
+                    # The S-49 op interceptor only strips the token when
+                    # `status is-interactive` is true; this case is reached from
+                    # non-interactive contexts (CC's Bash tool, scripts, cron) where
+                    # the SA-scoped session can't see Private vault items.
                     set -l op_fps
                     if not command -q op
                         echo "  (op CLI not installed; skipping)"
-                    else if not op account get >/dev/null 2>&1
+                    else if not env -u OP_SERVICE_ACCOUNT_TOKEN command op account get >/dev/null 2>&1
                         echo "  (not signed in to 1Password; run: op signin)"
                     else
-                        set -l items_json (op item list --categories "SSH Key" --vault $vault_default --format json 2>/dev/null)
+                        set -l items_json (env -u OP_SERVICE_ACCOUNT_TOKEN command op item list --categories "SSH Key" --vault $vault_default --format json 2>/dev/null)
                         if test -z "$items_json"; or test "$items_json" = "[]"
                             echo "  (no SSH Key items in vault)"
                         else
                             for id in (echo $items_json | jq -r '.[].id' 2>/dev/null)
                                 set -l title (echo $items_json | jq -r ".[] | select(.id==\"$id\") | .title")
-                                set -l pubkey (op item get $id --fields label="public key" --reveal 2>/dev/null)
+                                set -l pubkey (env -u OP_SERVICE_ACCOUNT_TOKEN command op item get $id --fields label="public key" --reveal 2>/dev/null)
                                 set -l fp "?"
                                 if test -n "$pubkey"
                                     set fp (echo $pubkey | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')

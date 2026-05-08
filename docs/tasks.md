@@ -1,6 +1,6 @@
 # Task Backlog: dwarvesf/dotfiles
 
-Updated: 2026-05-08 (S-53 shipped)
+Updated: 2026-05-08 (S-58 shipped)
 
 <!-- Old ID → New ID mapping: F-XX/R-XX/T-XX → S-XX. See docs/specs/S-*.md -->
 <!-- S-40 is intentionally unused (number skipped, no spec exists). -->
@@ -60,6 +60,11 @@ Updated: 2026-05-08 (S-53 shipped)
   - 2026-05-08 resolution: S-53 supersedes the SSH/mosh aspect by moving the SA token to System.keychain (no per-Security-Session unlock) and adding a per-machine SSH-key recipe so outbound `git` works without agent forwarding.
 - [x] S-52: Secrets architecture synthesis doc (`docs/secrets-architecture.md`) — the map above the spec chain. Threat model, credential × device × path matrix, spec-to-slice index, open-questions catalog. Backed by `scripts/test-doc-discipline.sh` discipline contract.
 - [x] S-53: Headless Mac credential pattern for SSH/mosh — System.keychain SA token + per-machine SSH key. Closes the S-51 errata "Fix space" by picking the System.keychain candidate and pairing it with a per-host github SSH key recipe (1P-generated ed25519, OpenSSH format, base64-piped to `$SECONDARY`). Result: `op` and `git` work over any SSH transport including iOS mosh, no agent forwarding required.
+- [x] S-54: `/dotfiles-sync` report uses a delta-inspired, scannable diff layout (single fenced block + `─── emoji Title ───` dividers + organic emoji palette 🌿/🌀/⚠️/👾/🔻/🔸/🍃 + bottom-half decoration: bucket pills, `[N phantom]` boxed counts, ⚪▮ pills, status icons; documents the design that emerged from 2026-05-08 iterations so future prompt edits don't re-litigate)
+- [x] S-55: `modify_CLAUDE.md.tmpl` self-emits its idempotency marker (every `chezmoi apply` was duplicating the canonical "Machines / Tool selection / Tech stack" heredoc because the marker was consumed but never emitted; one-line fix in the `else` branch + cleanup recipe to strip accumulated bloat. Mac mini: 1038 lines → stable 403 across 3 applies)
+- [x] S-56: Personal preferences move into the dotfiles modify-script (the `# Personal preferences` block — tone/feedback, formatting, visuals, light-theme defaults — was being maintained by hand in `~/.claude/CLAUDE.md` lines 1-32 on every machine, not version-controlled. Moved into `modify_CLAUDE.md.tmpl` heredoc above `# Machines I work from`. Above-marker upstream prefix now collapses to empty. Mac mini: 246 lines stable, 6 canonical headers each appearing exactly once.)
+- [x] S-57: `dotfiles ssh audit` strips `OP_SERVICE_ACCOUNT_TOKEN` explicitly so it always queries via biometric (the S-49 op interceptor only strips when `status is-interactive`; the audit is reached from non-interactive contexts where the SA-scoped session can't see Private vault, producing misleading "(no SSH Key items in vault)" + bogus unbacked-key nag. Fix is local to the audit case: 3 `op` invocations now use `env -u OP_SERVICE_ACCOUNT_TOKEN command op`. Mac mini: audit now correctly reports 3 SSH keys in Private and `✓ all 2 disk key(s) have a 1P counterpart`.)
+- [x] S-58: Per-machine `Host github.com` block in dotfiles ssh config (S-53 ratify) (the S-53 recipe writes the github block directly to `~/.ssh/config` on the machine; today's broad chezmoi apply clobbered it. Added the block to `home/dot_ssh/config.tmpl` template-conditional on `~/.ssh/id_ed25519_github` existing — fresh machines without S-53 done get 1P agent fallback instead of broken github SSH. Verified on Mac mini: block deploys, idempotent, `ssh -T git@github.com` authenticates as `tieubao`.)
 
 ## Next up
 

@@ -6,6 +6,249 @@ context.
 
 ---
 
+## [2026-05-08] S-58 ship: per-machine `Host github.com` SSH block ratified @ Mac mini
+
+User decision (asked 22:50): re-add the github SSH block to dotfiles
+source for cross-machine consistency. The block was added by the S-53
+recipe directly to live `~/.ssh/config`; today's broad chezmoi apply
+clobbered it. The user's Zed `cli_default_open_behavior` decision came
+in the same prompt: keep `new_window` (no source change needed).
+
+Implementation:
+  - Added `Host github.com` block to `home/dot_ssh/config.tmpl`,
+    template-conditional on `stat (joinPath .chezmoi.homeDir
+    ".ssh/id_ed25519_github")`.
+  - Block deploys only when the per-machine key exists. Fresh machines
+    without S-53 run get the 1P agent fallback (block absent, github
+    SSH still works via the global `Host *` IdentityAgent line).
+  - Self-documenting opt-in: run S-53, next `chezmoi apply` deploys
+    the block.
+
+Verified on Mac mini:
+  - chezmoi cat ~/.ssh/config contains the github block.
+  - chezmoi apply deploys idempotently.
+  - `ssh -T git@github.com` returns "Hi tieubao! You've successfully
+    authenticated."
+
+Spec: [S-58](specs/S-58-ssh-github-per-machine-block.md). Cross-machine
+impact: Mac Air M4 will get the block automatically next sync (the
+key already exists there from S-53). Future fresh machines: run S-53
+first, then apply.
+
+---
+
+## [2026-05-08] S-57 ship: `dotfiles ssh audit` biometric-explicit @ Mac mini
+
+Fixes the misleading nag from this morning's sync ("⚠ 1 of 2 disk key(s)
+have no 1P backup") that prompted the user to redo the `id_rsa` adopt
+even though it had succeeded.
+
+Root cause: `dotfiles ssh audit` calls `op item list --vault Private`
+which goes through the S-49 op interceptor. The interceptor only strips
+`OP_SERVICE_ACCOUNT_TOKEN` when `status is-interactive` is true. The
+audit was being invoked from non-interactive contexts (Claude Code's
+Bash tool, scripts), so the SA-scoped session was active. The user's SA
+token can see Toolkit/Trading vaults but not Private; `op item list
+--vault Private` errors out with "isn't a vault in this account",
+the audit eats the error with `2>/dev/null`, sees empty JSON, reports
+"(no SSH Key items in vault)".
+
+Fix: in `home/dot_config/fish/functions/dotfiles.fish`, the audit's
+three `op` invocations (`account get`, `item list`, `item get`) now
+explicitly use `env -u OP_SERVICE_ACCOUNT_TOKEN command op` so they
+always run biometric, regardless of caller context.
+
+Spec: [S-57](specs/S-57-ssh-audit-biometric-explicit.md). Verified on
+Mac mini with both `fish -l -c 'dotfiles ssh audit'` (non-interactive)
+and `fish -l -i -c 'dotfiles ssh audit'` (interactive) producing
+identical output: 3 SSH keys in Private (id_rsa, id_ed25519_trading_vps,
+GitHub) and `✓ all 2 disk key(s) have a 1P counterpart`.
+
+S-49 dual-mode behavior preserved everywhere outside the audit case:
+`op read op://...` from a subprocess still uses SA bearer auth.
+
+---
+
+## [2026-05-08] S-56 ship: `# Personal preferences` moves into dotfiles @ Mac mini
+
+User flagged that their global preferences (brutal-honest, no-em-dashes,
+visual-learner, light-theme) live as hand-written upstream prefix in
+`~/.claude/CLAUDE.md` and are NOT version-controlled. A fresh-machine
+bootstrap loses them silently.
+
+Fix: prepend a `# Personal preferences` section to the canonical heredoc
+in `modify_CLAUDE.md.tmpl` (above `# Machines I work from`). Mac mini's
+above-marker prefix now collapses to empty; the entire post-marker file
+is dotfiles-managed.
+
+Cleanup recipe (Mac mini today):
+  - Pre-S-56 size: 403 lines (191 upstream prefix + 212 canonical, post-S-55).
+    The 191-line upstream prefix had Personal preferences (32 lines) +
+    duplicated Tech stack/Security/Self-verification (159 lines, accidental
+    user copy-paste from way back).
+  - Truncate everything above the marker → 213 lines (marker + canonical).
+  - Apply with new heredoc → 246 lines stable across 3 applies.
+  - All 6 canonical headers (Personal preferences, Machines, Tool
+    selection, Tech stack, Security, Self-verification) appear exactly
+    once. The duplicated upstream copies of Tech/Security/Self-verification
+    are gone as a free side-effect.
+  - User-snippet keywords verified present (brutally honest, em dashes,
+    visual learner, light theme).
+
+Cross-machine: Mac Air M4 will need the same recipe next sync. After
+that, both machines have personal preferences under git history; future
+edits go through normal commit flow.
+
+Spec: [S-56](specs/S-56-personal-preferences-in-dotfiles.md). The user's
+personal CLAUDE.md global file is now (effectively) the modify-script
+output: marker + heredoc, 246 lines.
+
+---
+
+## [2026-05-08] S-55 ship: `modify_CLAUDE.md.tmpl` idempotency fix @ Mac mini
+
+The bug surfaced in [the same-day sync batch](#2026-05-08-sync-batch-mac-mini)
+below: every `chezmoi apply` of `~/.claude/CLAUDE.md` duplicated the
+canonical "Machines I work from / Tool selection / Tech stack
+preferences / Security Rules / Self-verification" heredoc by ~212 lines.
+
+Root cause: `modify_CLAUDE.md.tmpl` consumed the
+`# --- END claude-context ---` marker (used it to find prefix boundary)
+but never emitted it. The script's comment claimed an "upstream personal
+context generator" was supposed to emit it; that generator either never
+existed or has silently regressed. Marker absent → `else` branch took
+the entire input as PREFIX → canonical heredoc appended every run.
+
+Fix (one-liner): in the `else` branch, append the marker to the prefix
+on first run so subsequent applies find it. Spec:
+[S-55](specs/S-55-claude-md-modify-idempotency.md). Diff lives in
+`home/dot_claude/modify_CLAUDE.md.tmpl`.
+
+Cleanup recipe (Mac mini today):
+  - Pre-fix size: 1038 lines (4 cycles of canonical content stacked).
+  - Truncate everything from first `# Machines I work from` line
+    (line 192) down → 191 lines of upstream prefix only.
+  - Apply with fixed script → 403 lines (191 prefix + marker + 212
+    canonical).
+  - Apply twice more → stable at 403. ✓ idempotent.
+  - `# Machines I work from` count went from 4 → 1.
+  - `# Tech stack preferences` count is 3 (1 from canonical + 2 from
+    upstream prefix; the duplicate-in-prefix is a separate
+    user-personal-CLAUDE.md issue, out of scope per S-55).
+
+Cross-machine impact: Mac Air M4 will hit the same recipe next time it
+syncs (`~/.claude/CLAUDE.md` on the Air has accumulated its own bloat
+from the same bug). The fix is portable; the cleanup is per-machine.
+
+---
+
+## [2026-05-08] sync batch @ Mac mini
+
+First end-to-end run of the new S-54 layout. 19 pending entries from
+upstream PR #76 (multi-machine-op) were sitting since this morning's
+pull; this batch closes them out.
+
+Pending applied (P1-P10):
+  - 10 user skills (browser-tool-selection, cashflow-close,
+    cloudflare-tool-selection, doc-compaction, extract-workflow,
+    incident-workflow, ingest-to-wiki, playwright-record,
+    reconcile-properties, vn-contract-format) state-DB tracked.
+  - .claude/hooks/machine-banner SessionStart hook deployed.
+  - .config/fish/functions/{op,with-agent-token}.fish (S-49 dual-mode)
+    state-DB tracked.
+  - .claude/CLAUDE.md +211 lines (machines table + tool-selection rules)
+    via the modify_ overlay. Note: see "Open issues" below — the modify
+    script has a duplication bug that surfaced during this session.
+  - .claude/statusline-command.sh `"$HOME"` quote fix (SC2295).
+  - .gitconfig adds [init] templatedir = ~/.git_template.
+  - .Brewfile renders with +agent-browser, +opencode, +ollama,
+    +playwright-cli; renames zen-browser→zen, tailscale→tailscale-app.
+  - .config/code/extensions.txt + docker.fish completion (minor).
+
+Brewfile classifications (Untracked installs U1-U3):
+  - core: restic · tailscale · typescript     (home/dot_Brewfile.tmpl)
+  - core rename: codex → codex-app            (cask track-canonical)
+  - core add: ollama-app                      (cask, separate from CLI)
+  - local (~/.Brewfile.local): apfel · coreutils · gitup · subversion ·
+    yarn · hashicorp/tap/terraform · steipete/tap/remindctl · htop ·
+    hub · pipx · rbenv · ruby · the_silver_searcher · youtube-dl · z ·
+    zsh · google-cloud-sdk · zen-browser · microsoft-auto-update.
+    "Keep installed, don't promote, don't uninstall." All legacy aliases
+    (gcloud-cli/zen are the canonical equivalents in core).
+
+SSH backup:
+  - id_rsa adopted into 1Password "Private" vault. Verified by
+    `op item list --categories "SSH Key"` — fingerprint matches disk.
+  - All 4 SSH Key items in 1P: id_rsa (Private), GitHub (Private),
+    id_ed25519_trading_vps (Private), mini-github (Toolkit).
+
+Conflicts resolved (during user's broad chezmoi apply between turns):
+  - C1 .claude/settings.json — source's SessionStart hook landed.
+  - C2 .config/zed/settings.json — landed on `cli_default_open_behavior:
+    "new_window"` (source's value); user may want to revisit if they
+    preferred `existing_window` on this machine.
+
+Regressions to acknowledge:
+  - ~/.ssh/config Host github.com block (added by S-53 recipe earlier
+    today) was clobbered by the broad apply. github SSH now falls
+    through to the global `Host *` IdentityAgent (1P agent) line. Works
+    if 1P agent has the GitHub key enrolled, but it's not the
+    per-machine ed25519 path S-53 designed. Decide later: re-add the
+    block to source for cross-machine consistency, or accept agent
+    fallback.
+
+Open issues from this session (S-55 candidates):
+  - **`modify_CLAUDE.md.tmpl` is non-idempotent.** The script expects an
+    upstream generator to emit `# --- END claude-context ---` marker;
+    when absent, the script appends canonical sections every apply
+    instead of replacing them. Live `~/.claude/CLAUDE.md` now has 6
+    copies of `# Tech stack preferences` / `# Security Rules` headers.
+    Fix: have the modify script self-emit the marker on first run when
+    absent, so subsequent applies find it and idempotency holds.
+  - **`dotfiles ssh audit` shows zero SSH keys in Private vault** when
+    `op item list --vault Private --categories "SSH Key"` returns 3.
+    Vault-name resolution or stderr-eaten error inside the fish
+    function. Audit currently misleads the user into thinking adoption
+    didn't work.
+
+---
+
+## [2026-05-08] S-54 ship: `/dotfiles-sync` report layout (delta-inspired) @ Mac mini
+
+Codified the report layout that emerged from a long pairing iteration on
+the Mini today. Spec: [S-54](specs/S-54-dotfiles-sync-report-layout.md).
+Prompt source: `home/dot_claude/commands/dotfiles-sync.md` (`/dotfiles-sync`
+slash-command). No deployed-copy churn until next `chezmoi apply`.
+
+Settled design captured in the spec:
+  - Single fenced code block per run; `─── 🌿 Title — context ───` dividers
+    inside the block (replacing markdown `###` headings, which add an
+    unavoidable blank line in CC's renderer).
+  - Organic emoji palette: 🌿+ / 🌀~ / ⚠️‼ / 👾classify / 🔻superseded /
+    🔸stale-section / ⚪notify; status icons 🍃 / ⚠️ / ❌ for Notify-only.
+  - Strict row format `<emoji> <ascii> <padded-path>  <description> [tag]`
+    with description ≤ 40 chars (longer summarized as `+N items (a, b, …)`).
+  - Bottom-half decoration: bucket pills + `•` bullets in Untracked,
+    `[N phantom]` boxed count in Stale, `⚪▮` pill + `▸` sub-bullets +
+    `✗` missing markers in Already local, status-icon-led rows in
+    Notify-only.
+  - Header is a 2-line summary; zero counts collapse out.
+  - Responsive: balance check `RATIO < 4` AND `min(L,R) >= 3` AND
+    `COLS >= 140` to engage two-column; otherwise single-column. The
+    19/2 case from this session would have wasted ~85% of the right
+    column without the rule.
+
+Iterations rejected along the way (recorded so we don't relitigate):
+  - Colored squares (🟩🟨🟥🟧🟪) instead of emoji — user preferred
+    organic glyphs.
+  - Tags right-aligned to a column — long pad-stretches read as noise;
+    inline is denser.
+  - `⇒` separator between path and description — wasted a column.
+  - Markdown tables anywhere in the report — heavy cell borders in CC's
+    renderer destroy the dense diff look (now a hard rule in the prompt).
+
+---
+
 ## [2026-05-08] S-53 ship: System.keychain SA + per-machine SSH key on $SECONDARY @ Hans Air M4
 
 Closed the [S-51 errata](specs/S-51-multi-machine-sa-access.md#errata-2026-05-07)

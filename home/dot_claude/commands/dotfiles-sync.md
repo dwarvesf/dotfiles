@@ -14,7 +14,20 @@ Run these detection commands in parallel where possible:
 ```bash
 chezmoi status 2>/dev/null
 ```
-Look for lines starting with ` M` (modified) or `MM` (modified both sides).
+
+`chezmoi status` prints `XY PATH` where X = source state since last apply, Y = destination state since last apply. Interpret each code into a sync direction so the report can group correctly:
+
+| Code | Meaning | Direction | Report bucket |
+|---|---|---|---|
+| `A ` | source added, dest unchanged | apply creates on dest | **Pending apply** (`+`) |
+| `M ` | source modified | apply updates dest | **Pending apply** (`~`) |
+| `D ` / `R ` | source removed | apply deletes from dest | **Pending apply** (`-`) |
+| ` A` | dest gained a file, source unaware | absorb or ignore | **Drift to absorb** (`+`) |
+| ` M` | dest modified since last apply | needs `chezmoi re-add` | **Drift to absorb** (`~`) |
+| ` D` / ` R` | dest deleted, source still has it | restore on apply, or `chezmoi forget` | **Drift to absorb** (`-`) |
+| `MM` / `AM` | both sides changed | needs manual reconcile | **Conflict** (`‼`) |
+
+For every `MM` and any ambiguous case, **re-derive direction** with `bash -c 'diff <(chezmoi cat ~/PATH) ~/PATH'` before reporting. Don't trust the code alone.
 
 ### Brew packages
 ```bash
@@ -227,77 +240,290 @@ If a prior claim no longer holds, **drop it from the report and note the discrep
 
 ## Step 3: Report
 
-Present findings in plain language, grouped by category. For each category, show:
-- What changed (specific names, not counts)
-- Brief context if you can infer it ("ollama is probably for local LLM testing")
+Present findings in a **delta-inspired, color-coded, grouped-by-direction layout** so the user can scan quickly. Visual references: git-`delta`'s side-by-side responsive diff (commit-header block on top, file pills `▮`, `@@` hunk separators, **collapses to unified on narrow screens**) and renamed-file display (`old → new` arrows). The report renders as markdown in Claude Code's UI: ANSI escapes inside code fences are stripped, so use **emoji as semantic color**, **Unicode block characters (`▮ ▌ ▍`) for visual weight**, **arrow `→` for transitions**, and **markdown horizontal rules** as hunk separators. ANSI is only useful for a terminal-piped fallback, not the default render path.
 
-Use this format:
+### 3a. Width detection (responsive layout)
+
+Detect terminal width with a small cascade — Claude Code's Bash tool runs without a TTY, so `tput cols` returns 80 there even when the user's actual UI is wider:
+
+```bash
+COLS=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+```
+
+- `COLS >= 140` → **two-column layout** *eligible* (Pending apply | Drift to absorb side-by-side, manually aligned inside one fenced code block — see 3e)
+- `COLS  < 140` → **single-column layout** (sections stacked vertically inside fenced code blocks — see 3d)
+
+**Balance check (mandatory before choosing two-column):** count rows on each side. Two-column only earns its keep when both sides are populated *and* roughly balanced.
 
 ```
-Dotfiles sync report - YYYY-MM-DDTHH:MM:SS @ <hostname> | rev <git-short-rev>
-(Snapshot. If pasted into a later session, re-verify each blocker before acting.)
+LEFT  = rows in "Pending apply"
+RIGHT = rows in "Drift to absorb"
+RATIO = max(LEFT, RIGHT) / max(min(LEFT, RIGHT), 1)
+```
 
-Config drift (N files):
-  - path  - what changed (brief description of the diff)
+- `RATIO >= 4` → **fall back to single-column.** A 19/2 split (ratio 9.5) wastes ~85% of the right column's real estate; the visual scan cost beats any side-by-side benefit.
+- `RATIO < 4` AND `min(LEFT, RIGHT) >= 3` → use two-column.
+- Otherwise → single-column.
 
-New packages (N brew, N casks):
-  Brew: pkg1, pkg2, ...
-  Cask: app1, app2, ...
+If both signals are unreliable (non-TTY, no `$COLUMNS`), prefer single-column. A user can always say "narrow" / "wide" to override; ask once if unsure, then remember the choice for the rest of the session.
 
-Already local (tracked in .local files):
-  ~/.Brewfile.local:      brew: pkg1, ...  cask: app1, ...
-  extensions.local.txt:   ext1, ...
-  config.local.fish:      (N lines, or "not created")
-  tmux.local.conf:        (N lines, or "not created")
-  .gitconfig.local:       (N lines, or "not created")
+### 3a.1 No markdown tables — ever
 
-Tip: to move items between core and local, use:
-  dotfiles local promote <type> <name>   # local → core
-  dotfiles local demote <type> <name>    # core → local
+**Hard rule: do NOT use markdown tables (`| col | col |`) anywhere in the report.** Claude Code's renderer draws heavy cell borders around every row, which destroys the dense delta-style look the user wants. Use these alternatives instead:
 
-Guardrails upgrade available (optional):
-  Pinned: v<pinned>    Latest: v<latest>
-  Release notes: https://github.com/dwarvesf/claude-guardrails/releases/tag/v<latest>
-  (Notification only; the pin is not auto-updated. Say "bump guardrails" if you want me to update it.)
+| ❌ Don't do this | 🍃 Do this instead |
+|---|---|
+| `| 🟢 + foo | bar |` two-col table | one fenced code block with manual `│`-separated columns |
+| `| Bucket | Items |` for untracked-installs | indented list under a heading: `🔴▮ superseded:` then a blank-line-separated bullet list |
+| `| Check | Status |` for notify-only | indented `key:` `value` pairs, key padded to a consistent width |
+| `| File | Contents |` for already-local | one fenced code block with manual alignment, or `→`-prefix lines |
 
-Stale entries (N brew, N casks):
-  Brew: pkg1, pkg2, ... (in Brewfile but not installed)
-  Cask: app1, app2, ... (in Brewfile but not installed)
+The (small) table you're reading right now is OK because **it's instructional, not part of the report**. The runtime report has zero tables.
 
-VS Code extensions:
-  New: ext1, ext2, ...
-  Removed: ext1, ...
+### 3b. Visual vocabulary
 
-New fish functions (N):
-  func1, func2, ...
+**Markers** (lead each line, mapped to semantic colors via emoji indicator):
 
-New SSH configs (N):
-  host1 [clean]
-  host2 [⚠ private] - contains infra fingerprint, must not go to core
+| Marker | Emoji | Meaning | Mood |
+|---|---|---|---|
+| `+` | 🌿 | added — exists on one side, missing on other | growth |
+| `-` | 🔻 | removed / deprecated — superseded or pending deletion | down-shift |
+| `~` | 🌀 | modified — both have it, content differs | drift |
+| `‼` | ⚠️ | conflict — both sides changed independently | attention |
+| `·` | ⚪ | notify-only — informational, no action expected | quiet |
+| (bucket) | 👾 | classify — needs a core/local/skip decision | unknown |
 
-New Claude skills (N):
-  skill1, skill2, ... (user-authored, untracked)
+**Status icons** (used in the Notify-only section, one per check):
 
-Secrets:
-  [any findings or "no issues"]
+| Icon | Meaning |
+|---|---|
+| 🍃 | check passed / all good |
+| ⚠️ | non-blocking warning, action recommended |
+| ❌ | failure / urgent action needed |
 
-Secret cache (optional):
-  Registered but not cached: VAR1, VAR2
-  (Notification only. The first interactive shell on this machine will
-   biometric-prompt once per secret; run 'exec fish' to trigger now.)
+**Sub-glyphs** (used inside fenced sections for layout):
+- `▮` colored pill, used for `⚪▮ <path>` rows in Already-local and bucket labels in Untracked
+- `▸` sub-bullet, used for nested items under a row (e.g. `▸ cask (N): item · item`)
+- `•` bullet, used for grouped item lists inside Untracked buckets
+- `✗` missing/empty marker, used in Already-local for files not yet created
 
-SSH fragment backup status (optional):
-  <N> private fragment(s) with no 1P backup: <name1>, <name2>
-  (Notification only. Run the op item create snippet to back up.)
+**Row format (strict, compact):**
 
-SSH backup status (optional):
-  <N> of <M> disk key(s) have no 1P backup: <key1>, <key2>
-  (Notification only. To adopt: dotfiles ssh adopt ~/.ssh/<name>)
+```
+<emoji> <marker> <padded-path>  <description> [tag]
+```
+
+- `<emoji>` is the marker color (`🟢🔴🟡🟠⚪`). Single space after.
+- `<marker>` is the ASCII glyph (`+ - ~ ‼ ·`). Single space after.
+- `<padded-path>` is the path padded to the longest path *in this section*, capped at 46 chars; truncate longer paths from the front with `…`.
+- **Two spaces** between padded-path and description (no `⇒` glyph — wastes a column).
+- `<description>` is free-text, **≤40 chars**. Use `→` only for value transitions: `python 3.12.10 → 3.12.13`. Never use `+` / `-` inside the description (the row marker owns those glyphs); say `adds Host github.com` instead of `+ Host github.com`.
+- `[tag]` immediately after the description, **single space gap, NOT right-aligned to a column**. Right-aligned tag columns force long pad-stretches that read as visual noise. Inline is denser and the bracket itself is its own visual delimiter.
+
+**Examples (correct):**
+
+```
+🌿 + .claude/skills/extract-workflow/  PR #76 (multi-machine-op) [new]
+🌀 ~ ~/.tool-versions                  python 3.12.10 → 3.12.13 [mod]
+🌀 ~ ~/.ssh/config                     adds Host github.com block [mod]
+⚠️ ‼ ~/.config/zed/settings.json       cli_default: existing → new [conflict]
+🌀 ~ ~/.Brewfile                       +4 brews (agent-browser, opencode, …) [mod]
+```
+
+**Wrong — do not emit:**
+
+```
+🟢 + .claude/skills/foo/  ⇒  PR #76                                                [new]   ← right-pad before tag wastes cells
+🟡 ~ .Brewfile  adds agent-browser, opencode, ollama, playwright-cli [mod]                ← description >40 chars; will wrap
+```
+
+**Description-length rule:** if the natural description exceeds 40 chars (e.g. listing 4 added Brewfile entries), summarize as a count plus `…`: `+4 brews (agent-browser, opencode, …)`. The full list belongs in the section's *footer line* (see 3d) or in commit message at apply time, not on the diff row.
+
+The ASCII marker (`+ - ~ ‼`) is kept alongside the emoji so structure survives copy-paste into a terminal that strips emoji. Both signals live in the same 4-cell prefix budget.
+
+**Bucket pills** (used inside Untracked-installs and Already-local sections) — `🔻 superseded:` / `👾 classify:` / `👾 casks:` / `⚪▮ <path>` for already-local file rows. Don't use on per-row diff entries — the leading marker emoji already conveys color.
+
+**Tags** (bracketed, end of line; rendered bold via markdown `**[tag]**`):
+
+| Tag | Meaning |
+|---|---|
+| `[new]` | brand-new untracked file or package |
+| `[mod]` | modified vs other side |
+| `[del]` | deleted from one side |
+| `[conflict]` | both sides changed independently |
+| `[local]` | already routed to a `.local` override |
+| `[stale]` | listed in `~/.Brewfile` but not installed |
+| `[superseded]` | deprecated tool with a modern replacement (uninstall candidate) |
+| `[private]` | SSH fragment with infra fingerprint — never goes to core |
+| `[clean]` | SSH fragment with no fingerprint — safe for core |
+| `[pseudo-stale]` | apparent staleness that resolves on next `chezmoi apply` |
+
+**Section dividers (inside the fenced block, format `─── <emoji> Title — context ───`):**
+
+| Section | Divider emoji | Direction |
+|---|---|---|
+| Pending apply (repo → machine) | 🌿 | apply |
+| Drift to absorb (machine → repo) | 🌀 | re-add |
+| Conflict (both sides) | ⚠️ | reconcile |
+| Untracked installs | 👾 | classify |
+| Stale Brewfile entries | 🔸 | cleanup |
+| Already local | ⚪ | informational |
+| Notify-only | ⚪ | informational |
+| Recommended order | ✨ (markdown heading, outside the fenced block) | action plan |
+
+### 3c. Header block (compact, 2 lines)
+
+Start the report with a tight 2-line summary inside a fenced code block. No multi-line styled box — that wastes vertical space and the CC renderer pads it further.
+
+```
+sync 2026-05-08T20:35  @ Mac mini  rev c5e7009  narrow
+🌿 19 pending  ·  🌀 2 drift  ·  ⚠️ 2 conflict  ·  👾 21+5 untracked  ·  ⚪ 1/2 ssh-key
+```
+
+If a count is zero, omit it entirely (don't emit `🌿 0 pending`). The line collapses gracefully when little has changed. Emojis here mirror the section-divider palette in 3b.
+
+### 3d. Single-column layout (default, COLS < 140)
+
+**One fenced code block for the entire diff body.** Section dividers are `─── 🟢 Title ───` lines *inside* the block, not markdown `###` headings. This eliminates the unavoidable blank line CC's renderer inserts between an `###` heading and a fenced block — the user explicitly does not want that gap.
+
+After the diff body, the only markdown headings allowed are `### ✨ Recommended order` (because it's an action list, not a diff) and the trailing tip. Everything else is in the single block.
+
+````markdown
+[header block from 3c — already inside its own code fence]
+
+*(Snapshot. Re-verify each blocker before acting.)*
+
+```
+─── 🌿 Pending apply (repo → machine) — chezmoi apply ───
+🌿 + .claude/skills/extract-workflow/  PR #76 [new]
+🌿 + .claude/hooks/machine-banner/…    SessionStart hook [new]
+🌀 ~ .claude/CLAUDE.md                 +211 lines (machines table) [mod]
+🌀 ~ .Brewfile                         +4 brews (agent-browser, …) [mod]
+🔻 - .chezmoiscripts/old.sh            will be removed [del]
+
+─── 🌀 Drift to absorb (machine → repo) — chezmoi re-add ───
+🌿 + ~/.config/fish/functions/foo.fish  untracked [new]
+🌀 ~ ~/.ssh/config                      adds Host github.com block [mod]
+🌀 ~ ~/.tool-versions                   python 3.12.10 → 3.12.13 [mod]
+
+─── ⚠️ Conflict (both sides changed) — manual reconcile ───
+⚠️ ‼ ~/.claude/settings.json   source adds SessionStart; live drifted [conflict]
+
+─── 👾 Untracked installs — classify: core / local / skip ───
+🔻 superseded (likely brew uninstall — modern equivalents already in core):
+   • htop · hub · pipx · rbenv · ruby · rust · mosh
+   • the_silver_searcher · youtube-dl · z · zsh
+👾 classify (core / local?):
+   • apfel · coreutils · gitup · restic · subversion · tailscale · typescript · yarn
+   • hashicorp/tap/terraform · steipete/tap/remindctl
+👾 casks (likely renames / auto-deps):
+   • codex-app · google-cloud-sdk · microsoft-auto-update · ollama-app · zen
+
+─── 🔸 Stale Brewfile entries ───
+🌀 ~ ~/.Brewfile   [8 phantom]   ffmpeg · go · librsvg · node · protobuf ·
+                                  ripgrep · sqlite · terraform
+                   auto-resolves on next chezmoi apply [pseudo-stale]
+
+─── ⚪ Already local ───
+⚪▮ ~/.Brewfile.local           ▸ cask (8): chrysalis · disk-inventory-x · lunar ·
+                                            monitorcontrol · skype · warp · tor-browser · meetingbar
+                                ▸ brew (2): sentencepiece · lume
+⚪▮ extensions.local.txt        ✗ empty
+⚪▮ config.local.fish           ✗ not created
+⚪▮ tmux.local.conf             ✗ not created
+⚪▮ .gitconfig.local            ✗ not created
+
+─── ⚪ Notify-only ───
+🍃 guardrails       pinned v0.3.8 → latest v0.3.8  ·  up-to-date
+🍃 secrets cache    all cached
+⚠️  ssh keys         1/2 disk key(s) without 1P backup
+                    → dotfiles ssh adopt ~/.ssh/<name>
+🍃 hardcoded        no issues
+```
+
+### ✨ Recommended order
+
+1. `chezmoi apply` — deploys the N pending entries
+2. Reconcile the M conflicts — diff each, pick a side
+3. `chezmoi re-add` for K drift items — absorb local edits
+4. Decide on the J untracked brews — uninstall vs classify
+5. (interactive) Adopt SSH key into 1P
+
+**Tip** — `dotfiles local promote/demote <type> <name>` to move between core ↔ local
 
 What would you like me to do?
-```
+````
 
-If a category has no findings, omit it from the report.
+**Section divider rules:**
+- Format: `─── <emoji> <Title> — <subcommand-or-context> ───` (with one space inside each `───` cap).
+- **One blank line BEFORE each divider, except the very first divider in the fenced block.** Gives sections breathing room. NO blank line *after* the divider — the first row sits flush below the divider.
+- The divider's emoji = the section's primary color (per 3b table).
+- Sections appear in the priority order from 3b's section table (Pending apply → Drift → Conflict → Untracked → Stale → Already local → Notify-only).
+
+**Bottom-half decoration rules** — these sections are all-informational; without explicit decoration they read as a flat wall of text. Apply:
+
+- **Untracked installs** — bucket pill (🔻/👾) + indented `•` bullets, items broken into 1-2 visual rows per bucket. Don't dump 11 names on a single line.
+- **Stale Brewfile entries** — boxed count `[N phantom]` after the path provides visual weight; description follows on next line, indented.
+- **Already local** — every row gets a `⚪▮` pill prefix matching the diff-row format. Sub-buckets (cask/brew under `~/.Brewfile.local`) use `▸` with a count: `▸ cask (8):`. Missing files get a `✗` marker (red-style "not present"). Aligned column for the file name.
+- **Notify-only** — every row leads with a status icon: `🍃` pass, `⚠️` warning, `❌` failure. The icon answers "should I look at this?" before the text does. Multi-line entries (e.g. follow-up command for an action) indent under the parent row.
+
+### 3e. Two-column layout (COLS >= 140 *and* balance check passes)
+
+When width allows AND `RATIO < 4`, render Pending apply and Drift to absorb side-by-side inside the single fenced code block, using `│` (U+2502) as separator. **Do not use markdown tables.**
+
+````markdown
+[header block from 3c]
+
+*(Snapshot. Re-verify each blocker before acting.)*
+
+```
+─── 🟢 Pending apply — chezmoi apply ──────────────  │  ─── 🔵 Drift to absorb — chezmoi re-add ───
+🟢 + .claude/skills/extract-workflow/  PR #76 [new]   │  🟡 ~ ~/.ssh/config         adds github.com [mod]
+🟢 + .claude/hooks/machine-banner/…    banner [new]   │  🟡 ~ ~/.tool-versions      3.12.10 → 3.12.13 [mod]
+🟡 ~ .claude/CLAUDE.md                 +211 ln [mod]  │
+🟡 ~ .Brewfile                         +4 brews [mod] │
+─── 🟠 Conflict — manual reconcile ─────────────────────────────────────────────────────────────
+🟠 ‼ ~/.claude/settings.json    source adds SessionStart; live drifted [conflict]
+🟠 ‼ ~/.config/zed/settings.json   cli_default: existing → new [conflict]
+─── 🟣 Untracked installs — classify: core / local / skip ──────────────────────────────────────
+🔴▮ superseded:  htop · hub · pipx · rbenv · ruby · rust · the_silver_searcher · ...
+🟣▮ classify:    apfel · coreutils · gitup · ...
+🟣▮ casks:       codex-app · google-cloud-sdk · ...
+[remaining sections continue full-width below the two-column band]
+```
+````
+
+The two-column band ends at the first `─── ... ───` divider whose section is full-width-only (Conflict, Untracked, Already local, Notify-only). After that point, lines run edge-to-edge — no `│` separator.
+
+**Column-alignment rules for the two-column block:**
+- **Compute** left-column width once: `max(len(line) for line in left_rows)` clamped to `[60, 80]`. Apply that exact width to every left row via right-pad with spaces. Same for right column (clamp `[40, 60]`).
+- Right column starts at column = left-width + 3 (`│` plus a single padding space on each side).
+- Truncate paths from the front with `…` if they would overflow (e.g. `…/fish/functions/with-agent-token.fish`); never wrap inside a row.
+- If one column has fewer rows than the other, leave the shorter column blank but emit the `│` column-divider on every row so the vertical line stays continuous.
+- The header row (with section titles + commands) gets one blank line below it — that blank line is the visual "hunk separator" (mirrors `delta`'s `@@`).
+- **Run the balance check first** (3a). If `RATIO >= 4`, do NOT use this layout — fall back to single-column even if `COLS >= 140`.
+
+**Layout rules (both modes):**
+- Always emit the compact 2-line header block (3c) with timestamp, hostname, short rev, layout choice, and section counts. It's the audit anchor.
+- The diff body is **one single fenced code block** containing all sections separated by `─── 🟢 Title ───` dividers (per 3d). No markdown `###` headings inside the diff body — they introduce unwanted blank lines.
+- **Never use markdown tables.** Per 3a.1: tables get a heavy grid in CC's renderer that destroys the dense delta look.
+- Empty section → omit the divider line entirely; don't emit `─── 🟢 Pending apply ───` followed by nothing.
+- Path display: full target (`~/...`) for drift, repo-relative for source.
+- **Tags are mandatory** on every row (per 3b), inline, single space after the description. **Do not right-align** — pad-stretches read as visual noise.
+- **Collapse repetition.** When ≥5 consecutive rows share the same description (e.g. ten skills all from `PR #76`), emit one summary row + indented bullet list:
+  ```
+  🟢 + 10 skills from PR #76 (multi-machine-op) [new]
+       browser-tool-selection · cashflow-close · cloudflare-tool-selection ·
+       doc-compaction · extract-workflow · incident-workflow · ingest-to-wiki ·
+       playwright-record · reconcile-properties · vn-contract-format
+  ```
+- **One blank line BEFORE each section divider** (except the first), zero blank lines after. This is the visual hunk separator — sections breathe but rows sit pixel-tight under their divider.
+- "Recommended order" is mandatory when ≥3 direction sections exist; otherwise optional.
+- Tip line + `What would you like me to do?` always go at the very end (outside any code fence so they render as prose).
+
+**Tip** — to move items between core and local:
+  - `dotfiles local promote <type> <name>` — local → core
+  - `dotfiles local demote <type> <name>` — core → local
 
 ## Step 4: Wait for decisions
 

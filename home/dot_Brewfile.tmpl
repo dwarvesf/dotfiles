@@ -66,6 +66,7 @@ brew "neovim"
 brew "age"                    # file encryption (chezmoi encrypted_ files)
 brew "certbot"                # Let's Encrypt / ACME client
 brew "hashicorp/tap/vault"    # secrets management
+brew "restic"                 # encryption-aware backup tool
 
 {{ if not .headless -}}
 # ══════════════════════════════════════════════════════════════════════
@@ -78,6 +79,7 @@ brew "mise"                   # polyglot version manager (replaces nvm, rbenv, p
 # ── Languages & Runtimes ─────────────────────────────────────────────
 brew "golangci-lint"          # Go linter (replaces gometalinter)
 brew "pnpm"
+brew "typescript"             # tsc (one-off scripts; project deps still via pnpm)
 brew "uv"                     # fast Python package manager (replaces pipx)
 brew "python@3.12"
 brew "rustup"
@@ -109,6 +111,7 @@ brew "flyctl"
 brew "caddy"
 brew "nginx"
 brew "cloudflared"
+brew "tailscale"              # Tailscale CLI (paired with tailscale-app cask)
 brew "wireguard-tools"        # WireGuard VPN userspace tools
 
 # ── Data & Media ──────────────────────────────────────────────────────
@@ -125,8 +128,8 @@ brew "yt-dlp"                 # youtube-dl successor
 # ── AI Tools ──────────────────────────────────────────────────────────
 brew "aichat"                 # multi-LLM CLI
 brew "agent-browser"          # CDP-based browser automation CLI for AI agents (Vercel Labs)
-brew "opencode"               # multi-LLM coding agent CLI (formerly npm i -g opencode-ai)
-brew "ollama"                 # local LLM runner (Llama, Mistral, etc.)
+brew "opencode"               # multi-LLM coding agent CLI (replaces legacy npm "opencode-ai" install — uninstall npm version first)
+cask "ollama-app"             # Ollama GUI + bundled CLI (symlinks /opt/homebrew/bin/ollama → Ollama.app/Contents/Resources/ollama; do not also declare brew "ollama" — they conflict)
 brew "playwright-cli"         # standalone Playwright runner (separate from npm package)
 # llm via: uv tool install llm
 # lightpanda (nightly headless browser for AI agents) installed via
@@ -161,7 +164,8 @@ brew "mas"                    # Mac App Store CLI
 
 # ── AI / LLM ─────────────────────────────────────────────────────────
 cask "claude"                 # Claude desktop + Claude Code CLI
-cask "codex"                  # OpenAI Codex CLI (replaces npm @openai/codex)
+cask "codex"                  # OpenAI Codex CLI (terminal coding agent)
+cask "codex-app"              # OpenAI Codex desktop (GUI for managing agents; separate from the CLI)
 
 # ── macOS Apps ────────────────────────────────────────────────────────
 cask "visual-studio-code"
