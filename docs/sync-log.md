@@ -1169,3 +1169,15 @@ Fish functions:
 Brew/casks: deferred to next sync
 
 ---
+
+## [2026-05-08] sync @ Mac-mini
+
+Config:
+  - re-add `~/.claude/statusline-command.sh` — rebuilt as 2-line layout (identity / budget split). Abbreviated path (`w/t/ops-toolkit` instead of `…/workspace/tieubao/ops-toolkit`). `✦` replaces non-rendering NerdFont brain glyph. Effort uses words (`low`/`med`/`high`/`MAX`) instead of bracketed letters. Strips `(1M context)` parenthetical from model display name. Bullet-separated metrics line: `7%  ·  5% 51m  ·  68% 1d8h  ·  Mac-mini`.
+
+Other drift detected but deferred (out of scope for this narrow sync):
+  - `.Brewfile`, `.claude/CLAUDE.md`, `.claude/settings.json` modified
+  - many new `.claude/skills/*` and `.claude/hooks/machine-banner` directories not yet tracked
+  - `.chezmoiscripts/{aa-init,ab-1password-check,brew-bundle}.sh` reported as removed
+
+---
