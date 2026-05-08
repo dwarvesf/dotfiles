@@ -489,7 +489,7 @@ op read "op://Private/SSH config: mini/notesPlain" \
   > ~/.ssh/config.d/mini.local
 
 # Trading VPS (Trading vault)
-op read "op://Trading/SSH config: trading-egress-tokyo/notesPlain" \
+op read "op://Toolkit/SSH config: trading-egress-tokyo/notesPlain" \
   > ~/.ssh/config.d/trading-egress-tokyo.local
 
 chmod 600 ~/.ssh/config.d/*.local

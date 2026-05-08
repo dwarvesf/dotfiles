@@ -45,7 +45,7 @@ Personal migration record for applying the [S-46](../specs/S-46-three-vault-mode
 ## Verification checklist
 
 - [ ] `op read op://Infra/cloudflare-api-token/credential` returns the token from a fresh Claude Code session (no scope denial).
-- [ ] `op read op://Private/op-service-account-trading/credential` still returns scope denial (SA remains blind to its own storage).
+- [ ] `op read op://Private/op-service-account-ops/credential` still returns scope denial (SA remains blind to its own storage).
 - [ ] `tieubao/trading/operations/scripts/verify-op-trading-access.sh` exits 0 / 5 of 5 (no regression on trading-vault access).
 - [ ] `wrangler deploy` from agent shell still works (CF token still loads via fish env; env-inherit path unchanged).
 - [ ] SPEC-019 §2.1 + broker-access.md updated and committed in trading repo.

@@ -83,7 +83,7 @@ New file: `home/dot_config/fish/functions/with-agent-token.fish`
 ```fish
 function with-agent-token --description 'Run cmd with OP_SERVICE_ACCOUNT_TOKEN injected'
     # Update this ref if the service-account 1P item changes.
-    set -l ref "op://Private/op-service-account-trading/credential"
+    set -l ref "op://Private/op-service-account-ops/credential"
     set -l token ($HOME/.local/bin/secret-cache-read OP_SERVICE_ACCOUNT_TOKEN $ref)
     if test -z "$token"
         echo "with-agent-token: could not fetch $ref (op signed in?)" >&2

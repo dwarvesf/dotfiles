@@ -50,7 +50,7 @@ OPERATIONS_DOCS=(
 # doc-grep that includes scripts/).
 HOST=$(printf '%s%s' 'mini-' 'tieubao')
 USR=$(printf '%s%s' 'tieubao' '@')
-OPREF=$(printf '%s%s' 'op://Private/' 'op-service-account-trading')
+OPREF=$(printf '%s%s' 'op://Private/' 'op-service-account-ops')
 HOSTLOCAL=$(printf '%s%s' 'tieubao' '.local')
 
 PATTERN="${HOST}|${USR}|${OPREF}|${HOSTLOCAL}"

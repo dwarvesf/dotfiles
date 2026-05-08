@@ -87,7 +87,7 @@ Both return the SA-scoped subset, useful for "what does the agent actually see?"
    - 1P web → `Developer Tools → Service Accounts → Create`
    - Read-only access to the agent-readable vaults (today: `Trading`; per S-46 also `Infras` once you're ready)
    - Copy the `ops_...` token; store as a 1P item:
-     `op://Private/op-service-account-trading/credential`
+     `op://Private/op-service-account-ops/credential`
      (Or any path; update the ref in `home/dot_config/fish/functions/with-agent-token.fish` if different.)
 
 5. **First fish login** resolves all auto-loaded secrets via `secret-cache-read`. One biometric prompt per registered secret on the first shell only; Keychain caches forever.
@@ -128,7 +128,7 @@ dotfiles secret rm OPENAI_API_KEY
 dotfiles secret list
 # Registered secrets (cache status from macOS Keychain):
 #   [cached] CLOUDFLARE_API_TOKEN → op://Private/Cloudflare API Token/credential
-#   [cached] OP_SERVICE_ACCOUNT_TOKEN → op://Private/op-service-account-trading/credential
+#   [cached] OP_SERVICE_ACCOUNT_TOKEN → op://Private/op-service-account-ops/credential
 #   [ empty] NEW_TOKEN → op://Private/New/credential
 ```
 

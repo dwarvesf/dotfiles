@@ -259,7 +259,7 @@ ratio for a full rewrite was actually defensible.
 
 Sequence:
   1. Verified backups: 1P Secure Notes `op://Private/SSH config: mini` and
-     `op://Trading/SSH config: trading-egress-tokyo` both readable; on-disk
+     `op://Toolkit/SSH config: trading-egress-tokyo` both readable; on-disk
      `~/.ssh/config.d/mini.local` and `~/.ssh/config.d/trading-egress-tokyo`
      both intact.
   2. Tagged `pre-rewrite-2026-05-05` on origin (backup ref before rewrite).
@@ -348,7 +348,7 @@ untracked drop-ins work for free.
 under the same pattern: contained a public VPS IP, non-standard SSH port,
 and purpose-revealing key name. Now lives only at
 `~/.ssh/config.d/trading-egress-tokyo` on Hans Air M4 with backup at
-`op://Trading/SSH config: trading-egress-tokyo/notesPlain`.
+`op://Toolkit/SSH config: trading-egress-tokyo/notesPlain`.
 
 **Git history:** NOT rewritten. Repo is public, has 2 forks, 6 stars; the
 plaintext blob is in commit `a1f532f` and was likely fetched by watchers
@@ -369,7 +369,7 @@ Changes:
 
 1Password Secure Notes created (Hans Air M4 session):
   - `op://Private/SSH config: mini/notesPlain`
-  - `op://Trading/SSH config: trading-egress-tokyo/notesPlain`
+  - `op://Toolkit/SSH config: trading-egress-tokyo/notesPlain`
 
 Verification: `chezmoi apply --dry-run` shows no drift; `ssh -G mini`
 still resolves to `mac-mini-danang` (the deployed `~/.ssh/config.d/mini.local`
@@ -1016,7 +1016,7 @@ so agent subprocess reads fail silently. Service account bearer auth
 bypasses biometric entirely once `OP_SERVICE_ACCOUNT_TOKEN` is in env.
 
 Registered locally (this machine only, per-user action, not shared):
-  - `dotfiles secret add OP_SERVICE_ACCOUNT_TOKEN "op://Private/op-service-account-trading/credential"`
+  - `dotfiles secret add OP_SERVICE_ACCOUNT_TOKEN "op://Private/op-service-account-ops/credential"`
   - Token scoped server-side to the `Trading` vault in 1Password
   - First fish login triggered one biometric; all subsequent shells silent
 

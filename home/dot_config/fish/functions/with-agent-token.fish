@@ -1,6 +1,6 @@
 function with-agent-token --description 'Run cmd with OP_SERVICE_ACCOUNT_TOKEN injected (S-47)'
     # Update this ref if the service-account 1P item changes.
-    set -l ref "op://Private/op-service-account-trading/credential"
+    set -l ref "op://Private/op-service-account-ops/credential"
 
     if test (count $argv) -eq 0
         echo "Usage: with-agent-token <command> [args...]" >&2

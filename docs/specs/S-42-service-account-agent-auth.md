@@ -20,7 +20,7 @@ date: 2026-04-23
 ## Problem
 
 Claude Code (and any other LLM agent running as a fish subprocess) needs to
-read secrets from 1Password mid-session, e.g. `op read op://Trading/binance/api_key`
+read secrets from 1Password mid-session, e.g. `op read op://Toolkit/binance/api_key`
 inside a tool call. Our existing S-35 design handles this cleanly for
 **pre-registered** secrets: they're resolved once at shell login via
 `secret-cache-read` and inherited as env vars. But ad-hoc `op read` calls from

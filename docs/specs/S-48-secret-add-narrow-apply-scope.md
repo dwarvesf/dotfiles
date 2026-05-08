@@ -134,7 +134,7 @@ and re-fetches via `secret-cache-read`; it doesn't run `chezmoi apply`.
 # 1. Reproduce the original bug, confirm it's fixed.
 #    Pre-condition: have unrelated drift in ~/.config/zed/settings.json.
 dotfiles secret add OP_SERVICE_ACCOUNT_TOKEN \
-    "op://Private/op-service-account-trading/credential" --force
+    "op://Private/op-service-account-ops/credential" --force
 # Expect: secrets.fish is the only file touched; if it fails, revert leaves
 # both source AND target without the line. No half-state.
 

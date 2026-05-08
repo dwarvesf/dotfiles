@@ -73,7 +73,7 @@ security delete-generic-password -a "$USER" -s OP_SERVICE_ACCOUNT_TOKEN 2>/dev/n
 ## Step 3 — Seed the SA token (one biometric popup expected)
 
 ```fish
-env -u OP_SERVICE_ACCOUNT_TOKEN op read 'op://Private/op-service-account-trading/credential' \
+env -u OP_SERVICE_ACCOUNT_TOKEN op read 'op://Private/op-service-account-ops/credential' \
   | bash -c 'security add-generic-password -a "$USER" -s OP_SERVICE_ACCOUNT_TOKEN -w "$(cat)" -A -U' \
   && echo "✓ seeded with -A"
 ```
