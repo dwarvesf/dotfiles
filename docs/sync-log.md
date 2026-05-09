@@ -84,7 +84,8 @@ Built a new `PreToolUse` hook that complements claude-guardrails'
 
 Block rules:
 
-Seven iterations in this session, all visible in the spec test matrix:
+Nine iterations in this session, all visible in the spec test matrix
+and the Changelog appendix in `docs/specs/S-62-secret-guard-pretooluse-hook.md`:
 
 - **v1** (loose): treated any pipe as safe. User disproved with
   `op read op://Personal/opencode-go/credential | paste-token`. Full key
@@ -238,6 +239,59 @@ Seven iterations in this session, all visible in the spec test matrix:
   bypass marker for the test invocation. Both confirm the hook
   works end-to-end. New tests 110-117 in the matrix; 108/108
   green.
+- **v3.5** (per-rule guidance + MODE switch + retroactive audit,
+  shipped): user asked "what else can we do to improve" with
+  ultrathink. Tight package: A1 + A2 + B1 + C1 + E1.
+    - **A1**: `block()` now takes a rule-ID arg and dispatches per-
+      rule recipes. Hitting B5 (cat of secret-bearing file) shows
+      "this file holds rendered values; use `dotfiles secret list`"
+      instead of generic curl-with-token snippets. Block header
+      reads `BLOCKED: secret leak (S-62/<rule>)`. 16 call sites
+      updated.
+    - **C1**: SECRET_GUARD_MODE env var + ~/.config/secret-guard/
+      mode file. `strict` (default), `warn-only` (log + warn but
+      exit 0), `off` (exit 0 immediately). `dotfiles secret-guard
+      mode {strict|warn-only|off}` to read/set. Useful for
+      progressive adoption (warn-only on a new machine for a day,
+      then promote).
+    - **A2**: fish completions for the `secret-guard` (alias `sg`)
+      verbs and sub-verbs (explain/test/log/tail/mode/audit-
+      transcripts/doctor) + log-filter flags + mode values.
+    - **B1**: `dotfiles secret-guard audit-transcripts` -- scan
+      ~/.claude/projects/**/*.jsonl against patterns/secrets.json.
+      Read-only. **Empirical first run on Hans-Air-M4 flagged ~5
+      transcripts** with various pattern matches (mostly false
+      positives like commit SHAs, but also genuine "Secret-like
+      variable assignment" hits worth reviewing). Real retroactive
+      privacy value.
+    - **E1**: chezmoi self-test prints a one-time first-run banner
+      pointing at the cheatsheet + CLI verbs + mode switch. Marker:
+      `~/.cache/secret-guard.first-run-shown`.
+  Test matrix grew 4 cases (120-123): warn-only exits 0, off mode
+  silent, B5 block message has B5-specific guidance, B7 block has
+  B7-specific guidance. **112/112 green.**
+
+  Note on this iteration: user reverted four tracked files
+  (`modify_settings.json`, `dotfiles.fish`, `tasks.md`, `CLAUDE.md`)
+  to clean state mid-session before continuing v3.5. The hook
+  source (rule IDs + MODE switch) and the new untracked files
+  (cheatsheet, spec, tests, hooks, self-test) were preserved.
+  The Tight package re-establishes the integration on top of the
+  reverted baseline plus adds v3.5.
+- **v3.5.1** (SDD-cleanup, shipped): user asked to apply SDD
+  discipline back to S-62 to make sure the spec reads as a coherent
+  design document rather than a chronological changelog. Spec
+  restructured: removed embedded "v3.4" / "v3.5" subsections from
+  the body; rules B1-W2 documented uniformly with a 4-field format
+  (leak scenario / why it leaks / detection / safe form / test IDs);
+  added an architecture diagram showing the four hook points
+  (UserPromptSubmit -> PreToolUse -> tool exec -> PostToolUse ->
+  Stop -> JSONL); test matrix presented as a category-organized
+  table; iteration history moved to a Changelog appendix at the
+  end. Cheatsheet anti-pattern catalogue rewritten as a table that
+  cross-refs each AP to its rule ID (B1, B5, etc.). Documentation-
+  only pass: no hook code or test changes; 112/112 still green.
+  Spec is 634 lines (down from 661); information-loss-free.
 
 | # | Tool | Block rule (v3) |
 |---|------|------|
@@ -271,9 +325,9 @@ Bypass: `# secret-guard: allow` per call. Wrappers (`env -u FOO cmd`,
 Failure mode: missing jq or malformed JSON -> exit 0 (fail open).
 Audit log: `~/.cache/claude-secret-guard.log`.
 
-Verification (S-62 test matrix, `bash tests/secret-guard.sh`): **108/108
-green** on Hans-Air-M4 across seven iterations (v1 -> v2 -> v3 -> v3.1
--> v3.2 -> v3.3 -> v3.4):
+Verification (S-62 test matrix, `bash tests/secret-guard.sh`): **112/112
+green** on Hans-Air-M4 across eight iterations (v1 -> v2 -> v3 -> v3.1
+-> v3.2 -> v3.3 -> v3.4 -> v3.5):
 
 - 52 cases from the initial v1->v3 development.
 - 5 cases from the v3.1 audit pass (FN1 literal credentials in Bash

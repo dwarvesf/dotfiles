@@ -2,6 +2,8 @@ complete -c dotfiles -f
 complete -c dotfiles -n "__fish_use_subcommand" -a "edit" -d "Edit + apply + auto-commit"
 complete -c dotfiles -n "__fish_use_subcommand" -a "drift" -d "Detect and re-absorb drifted files"
 complete -c dotfiles -n "__fish_use_subcommand" -a "secret" -d "Manage 1Password secrets"
+complete -c dotfiles -n "__fish_use_subcommand" -a "secret-guard" -d "S-62 hook: explain/test/log/mode/audit-transcripts/doctor"
+complete -c dotfiles -n "__fish_use_subcommand" -a "sg" -d "S-62 hook (alias)"
 complete -c dotfiles -n "__fish_use_subcommand" -a "local" -d "Manage machine-specific .local files"
 complete -c dotfiles -n "__fish_use_subcommand" -a "diff" -d "Show pending changes"
 complete -c dotfiles -n "__fish_use_subcommand" -a "sync" -d "Apply all changes"
@@ -59,3 +61,38 @@ complete -c dotfiles -n "__fish_seen_subcommand_from demote; and __fish_seen_sub
     -a "(grep -E '^cask \"' ~/.Brewfile 2>/dev/null | sed 's/^cask \"//;s/\".*//')"
 complete -c dotfiles -n "__fish_seen_subcommand_from demote; and __fish_seen_subcommand_from ext" \
     -a "(cat ~/.config/code/extensions.txt 2>/dev/null)"
+
+# dotfiles secret-guard subcommands (S-62 v3.5)
+set -l __sg_verbs explain test t log l tail mode m audit-transcripts at doctor d
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "explain" -d "Dry-run hook against a command"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "test" -d "Run the spec test matrix"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "log" -d "Tail audit log (filter with --blocks/--bypasses/--leaks/--all)"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "tail" -d "Live-tail audit log"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "mode" -d "Show or set hook mode (strict/warn-only/off)"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "audit-transcripts" -d "Scan ~/.claude/projects/*.jsonl for credential patterns"
+complete -c dotfiles -n "__fish_seen_subcommand_from secret-guard sg; and not __fish_seen_subcommand_from $__sg_verbs" \
+    -a "doctor" -d "Health check on hook deployment"
+
+# log filters
+complete -c dotfiles -n "__fish_seen_subcommand_from log l; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "--blocks" -d "Only block events"
+complete -c dotfiles -n "__fish_seen_subcommand_from log l; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "--bypasses" -d "Only bypass-marker uses"
+complete -c dotfiles -n "__fish_seen_subcommand_from log l; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "--leaks" -d "Only Stop/PostToolUse leak detections"
+complete -c dotfiles -n "__fish_seen_subcommand_from log l; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "--all" -d "All entries"
+
+# mode values
+complete -c dotfiles -n "__fish_seen_subcommand_from mode m; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "strict" -d "Default: block on rule hit"
+complete -c dotfiles -n "__fish_seen_subcommand_from mode m; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "warn-only" -d "Log + warn but don't block"
+complete -c dotfiles -n "__fish_seen_subcommand_from mode m; and __fish_seen_subcommand_from secret-guard sg" \
+    -a "off" -d "Disable the hook (debug only)"

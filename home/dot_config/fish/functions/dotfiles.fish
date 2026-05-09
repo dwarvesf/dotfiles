@@ -1337,6 +1337,201 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                     return 1
             end
 
+        case secret-guard sg
+            # S-62 secret-guard hook utilities (v3.5).
+            set -l sub $argv[2]
+            set -l rest $argv[3..-1]
+            set -l hook $HOME/.claude/hooks/secret-guard/secret-guard.sh
+            set -l log $HOME/.cache/claude-secret-guard.log
+            set -l mode_file $HOME/.config/secret-guard/mode
+            set -l patterns $HOME/.claude/hooks/patterns/secrets.json
+
+            switch $sub
+                case explain
+                    if test -z "$rest"
+                        echo "Usage: dotfiles secret-guard explain '<bash-command>'"
+                        echo "Example: dotfiles secret-guard explain 'op read op://X/Y/z | jq'"
+                        return 1
+                    end
+                    if not test -x $hook
+                        echo "✗ hook not deployed at $hook (run chezmoi apply)"
+                        return 1
+                    end
+                    set -l cmd (string join ' ' $rest)
+                    set -l json (jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c},session_id:"secret-guard-explain"}')
+                    echo $json | bash $hook
+                    set -l rc $status
+                    echo
+                    if test $rc -eq 0
+                        echo "✓ ALLOW (rc=0)  -- this command would run"
+                    else if test $rc -eq 2
+                        echo "✗ BLOCK (rc=2)  -- this command would be blocked"
+                    else
+                        echo "? rc=$rc unexpected"
+                    end
+                    return $rc
+
+                case test t
+                    set -l repo (dirname (chezmoi source-path))
+                    set -l runner $repo/tests/secret-guard.sh
+                    if not test -f $runner
+                        echo "✗ tests/secret-guard.sh not found at $runner"
+                        return 1
+                    end
+                    HOOK=$hook bash $runner $rest
+                    return $status
+
+                case log l
+                    if not test -f $log
+                        echo "(no audit log yet at $log)"
+                        return 0
+                    end
+                    set -l filter
+                    switch "$rest[1]"
+                        case --blocks
+                            set filter '\[BLOCK\]'
+                        case --bypasses
+                            set filter '\[BYPASS\]'
+                        case --leaks
+                            set filter '(STOP-LEAK|POST-LEAK)'
+                        case --all '' '--'
+                            set filter '.'
+                        case '*'
+                            echo "Usage: dotfiles secret-guard log [--blocks|--bypasses|--leaks|--all]"
+                            return 1
+                    end
+                    grep -E "$filter" $log | tail -50
+                    return 0
+
+                case tail
+                    # Live-tail the audit log (Ctrl-C to stop).
+                    if not test -f $log
+                        echo "(no audit log yet at $log)"
+                        return 0
+                    end
+                    tail -F $log
+
+                case mode m
+                    # Show or set the hook mode.
+                    set -l want $rest[1]
+                    if test -z "$want"
+                        if test -r $mode_file
+                            echo "current mode (file): "(cat $mode_file)
+                        else
+                            echo "current mode: strict (default; no file at $mode_file)"
+                        end
+                        echo "set with: dotfiles secret-guard mode {strict|warn-only|off}"
+                        return 0
+                    end
+                    switch $want
+                        case strict warn-only off
+                            mkdir -p (dirname $mode_file)
+                            echo $want > $mode_file
+                            echo "✓ secret-guard mode set to: $want"
+                            if test "$want" = "off"
+                                echo "  ⚠ hook is now disabled. Re-enable with 'dotfiles secret-guard mode strict'."
+                            else if test "$want" = "warn-only"
+                                echo "  ⚠ hook will warn but not block. Promote with 'dotfiles secret-guard mode strict' once you trust it."
+                            end
+                        case '*'
+                            echo "✗ unknown mode: $want (valid: strict, warn-only, off)"
+                            return 1
+                    end
+                    return 0
+
+                case audit-transcripts at
+                    # B1: scan ~/.claude/projects/**/*.jsonl for credential
+                    # patterns. Read-only; reports findings only.
+                    if not test -f $patterns
+                        echo "✗ patterns file not found: $patterns"
+                        return 1
+                    end
+                    set -l projects $HOME/.claude/projects
+                    if not test -d $projects
+                        echo "(no projects dir at $projects)"
+                        return 0
+                    end
+                    echo "Scanning ~/.claude/projects/**/*.jsonl for credential patterns..."
+                    echo
+                    set -l found_files 0
+                    set -l total_hits 0
+                    set -l files (find $projects -name '*.jsonl' -type f)
+                    set -l total_files (count $files)
+                    if test $total_files -eq 0
+                        echo "  (no transcripts to scan)"
+                        return 0
+                    end
+                    for jsonl in $files
+                        set -l hits (jq -rn --rawfile p $jsonl --slurpfile pats $patterns '
+                            $pats[0] | map(select(.r as $r | $p | test($r))) | map(.n) | unique | .[]
+                        ' 2>/dev/null)
+                        if test (count $hits) -gt 0
+                            set -l rel (string replace $HOME '~' $jsonl)
+                            echo "  $rel"
+                            for hit in $hits
+                                echo "    - $hit"
+                                set total_hits (math $total_hits + 1)
+                            end
+                            set found_files (math $found_files + 1)
+                        end
+                    end
+                    echo
+                    if test $found_files -eq 0
+                        echo "✓ no credential patterns matched in any of $total_files transcripts"
+                    else
+                        echo "⚠ patterns matched in $found_files of $total_files transcripts ($total_hits hits)"
+                        echo "  If real credentials: ROTATE NOW. JSONLs persist on disk."
+                        echo "  May be false positives (commit SHAs, hashes, fixtures)."
+                    end
+                    return 0
+
+                case doctor d
+                    set -g __sg_ok 0
+                    set -g __sg_fail 0
+                    function __sg_check
+                        if eval $argv[2..-1]
+                            echo "  ✓ $argv[1]"
+                            set -g __sg_ok (math $__sg_ok + 1)
+                        else
+                            echo "  ✗ $argv[1]"
+                            set -g __sg_fail (math $__sg_fail + 1)
+                        end
+                    end
+                    echo "secret-guard doctor:"
+                    __sg_check "PreToolUse hook deployed at $hook"  "test -x $hook"
+                    __sg_check "Stop hook deployed"                  "test -x $HOME/.claude/hooks/secret-guard/secret-guard-stop.sh"
+                    __sg_check "PostToolUse hook deployed"           "test -x $HOME/.claude/hooks/secret-guard/secret-guard-post.sh"
+                    __sg_check "patterns/secrets.json present"       "test -f $patterns"
+                    __sg_check "jq available"                         "command -v jq >/dev/null"
+                    __sg_check "audit log dir writable"              "test -w $HOME/.cache"
+                    __sg_check "modify_settings.json present"        "test -f (chezmoi source-path)/dot_claude/modify_settings.json"
+                    __sg_check "mode file readable (or default)"      "test ! -e $mode_file -o -r $mode_file"
+                    echo
+                    echo "  $__sg_ok ok, $__sg_fail fail"
+                    set -e __sg_ok
+                    set -e __sg_fail
+                    functions -e __sg_check
+                    return 0
+
+                case ''
+                    echo "Usage: dotfiles secret-guard <command>"
+                    echo ""
+                    echo "Commands:"
+                    echo "  explain '<cmd>'    Dry-run hook against a command"
+                    echo "  test               Run the spec test matrix"
+                    echo "  log [filter]       Tail audit log (--blocks|--bypasses|--leaks|--all)"
+                    echo "  tail               Live-tail audit log"
+                    echo "  mode [s|w|o]       Show/set mode (strict|warn-only|off)"
+                    echo "  audit-transcripts  Scan old JSONLs for credential patterns"
+                    echo "  doctor             Health check on hook deployment"
+                    return 0
+
+                case '*'
+                    echo "dotfiles secret-guard: unknown subcommand '$sub'"
+                    echo "Run 'dotfiles secret-guard' for help."
+                    return 1
+            end
+
         case ''
             echo "Usage: dotfiles <command>"
             echo ""
@@ -1344,6 +1539,7 @@ function dotfiles -d "Manage dotfiles via chezmoi"
             echo "  edit <file>       Edit + apply + auto-commit"
             echo "  drift             Detect and re-absorb drifted files"
             echo "  secret <cmd>      Manage 1Password secrets (add/rm/list)"
+            echo "  secret-guard <cmd> S-62 hook utilities (explain/test/log/mode/audit-transcripts/doctor)"
             echo "  local <cmd>       Manage machine-specific .local files (list/promote/demote/edit)"
             echo "  ssh <cmd>         SSH key inventory / adopt / backup (audit/adopt/backup)"
             echo "  diff              Show pending changes"
