@@ -6,6 +6,28 @@ context.
 
 ---
 
+## [2026-05-09] sync @ Hans-Air-M4
+
+Pulled `d5f2241..8668b79` (v0.6.3: S-62 secret-guard, peon-ping, sync fixes).
+S-62 hooks deployed cleanly; secret-guard.sh + post.sh + stop.sh present.
+
+Brewfile (local - ~/.Brewfile.local):
+  - added cask: swiftdefaultappsprefpane (macOS default-apps pref pane)
+
+Skipped (decide later, no persistence):
+  - brew: ollama, python@3.10, yarn (resurfaces on next sync)
+
+Left as-is:
+  - brew: hub, pipx, the_silver_searcher (superseded; uninstall denied — kept)
+  - cask: microsoft-auto-update (MS auto-dep, harmless)
+  - ~/.config/fish/functions/fisher.fish (self-installs)
+
+Notify-only:
+  - 1 of 3 SSH disk keys without 1P backup (deferred)
+  - peon-ping in core Brewfile but not installed; pending `chezmoi apply --force`
+
+---
+
 ## [2026-05-09] release: v0.6.3 - secret-guard hook + peon-ping + sync fixes @ Mac-mini
 
 Patch release covering work landed since v0.6.2:
