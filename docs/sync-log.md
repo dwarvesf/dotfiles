@@ -24,7 +24,15 @@ Left as-is:
 
 Notify-only:
   - 1 of 3 SSH disk keys without 1P backup (deferred)
-  - peon-ping in core Brewfile but not installed; pending `chezmoi apply --force`
+
+Bug fix:
+  - `run_onchange_BEFORE_brew-bundle.sh` → `run_onchange_AFTER_brew-bundle.sh`.
+    The BEFORE-phase script ran while ~/.Brewfile on disk still held the
+    OLD content, so v0.6.3's new `tap "peonping/tap"` line was never seen
+    by `brew bundle`. peon-ping never tapped/installed, even with --force.
+    Renaming to AFTER-phase ensures bundle reads the freshly-deployed
+    Brewfile. Verified: chezmoi apply re-triggered brew-bundle cleanly,
+    peon-ping installed, peon-ping-setup wired hooks/Cursor/OpenCode.
 
 ---
 

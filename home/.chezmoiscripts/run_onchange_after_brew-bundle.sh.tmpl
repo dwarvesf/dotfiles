@@ -1,6 +1,12 @@
 #!/bin/bash
 # Brewfile hash: {{ include "dot_Brewfile.tmpl" | sha256sum }}
 # Re-runs only when Brewfile content changes.
+#
+# Renamed from run_onchange_BEFORE_brew-bundle.sh on 2026-05-09: when a
+# Brewfile change adds a tap (e.g. peonping/tap), the BEFORE-phase script
+# ran while ~/.Brewfile on disk still held the OLD content, so brew bundle
+# never saw the new tap line and silently skipped the new formula. Running
+# AFTER file deployment ensures bundle reads the freshly-deployed Brewfile.
 
 _has_gum() { command -v gum &>/dev/null; }
 _gum() { env -u UNDERLINE -u BOLD -u ITALIC -u FAINT -u STRIKETHROUGH gum "$@"; }
