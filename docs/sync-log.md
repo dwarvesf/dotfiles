@@ -6,6 +6,28 @@ context.
 
 ---
 
+## [2026-05-09] release: v0.6.3 - secret-guard hook + peon-ping + sync fixes @ Mac-mini
+
+Patch release covering work landed since v0.6.2:
+
+- **S-62**: secret-guard PreToolUse + PostToolUse + Stop hooks enforcing
+  S-45 ("never echo resolved secret values") against Claude's outbound
+  tool calls. 17 rules (B1-W2), terminal-aware pipeline detection,
+  112-case test matrix, `dotfiles secret-guard` (alias `sg`) CLI, audit
+  log with 1 MiB rotation, mode switch (strict/warn-only/off). Self-test
+  on chezmoi apply via `run_onchange_after_secret-guard-test.sh.tmpl`.
+- **feat(peon-ping)**: voice + overlay notifications wired to Claude Code
+  hook events (Stop, Notification, SessionStart, PermissionRequest,
+  etc.) via `peon-ping-setup` driver script. Brewfile entry +
+  `run_onchange_after_peon-ping-setup.sh.tmpl`.
+- **fix(sync) (PR #84)**: `/dotfiles-sync` consolidated into single
+  canonical body, filters always-run chezmoi scripts from drift report,
+  consolidates `op` calls + zsh nullglob safety.
+
+No spec or schema changes outside of the above.
+
+---
+
 ## [2026-05-09] feat: peon-ping (game-voice notifications for Claude Code) @ Mac-mini
 
 User wanted [PeonPing/peon-ping](https://github.com/PeonPing/peon-ping)
