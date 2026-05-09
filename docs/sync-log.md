@@ -6,6 +6,318 @@ context.
 
 ---
 
+## [2026-05-09] feat: peon-ping (game-voice notifications for Claude Code) @ Mac-mini
+
+User wanted [PeonPing/peon-ping](https://github.com/PeonPing/peon-ping)
+installed and integrated as a core dotfiles dependency so every machine
+that bootstraps from this repo gets voice + overlay notifications when
+Claude Code (and other AI agents) hits a hook event (Stop, Notification,
+SessionStart, PermissionRequest, etc.).
+
+Brewfile (`home/dot_Brewfile.tmpl`):
+  - added tap: `peonping/tap`
+  - added brew: `peon-ping` under AI Tools section
+
+New chezmoi script: `home/.chezmoiscripts/run_onchange_after_peon-ping-setup.sh.tmpl`
+  - Runs `peon-ping-setup` after brew bundle has installed the binary.
+  - peon-ping-setup is the canonical wire-up step: it auto-detects
+    installed AI IDEs (Claude Code, Cursor, OpenCode, Windsurf, etc.),
+    registers hooks/plugins, downloads the default starter sound packs,
+    and creates the symlinks under `~/.claude/hooks/peon-ping/` that
+    the hook entries in `settings.json` point at.
+  - Idempotent (safe to re-run); guarded on `headless`.
+  - `# packs:` hash-trigger comment so bumping it forces a re-run.
+
+`modify_settings.json` left untouched. Its existing dedup-by-marker filters
+strip entries by `LEARNING CAPTURE CHECK`, `secret-guard-stop.sh`, and
+`machine-banner.sh` markers; peon-ping's hook command does not match any
+of them, so the additive merge preserves peon-ping's hook entries across
+applies. New event types peon-ping registers (Notification, SessionEnd,
+SubagentStart, PermissionRequest, PostToolUseFailure, PreCompact,
+UserPromptSubmit) survive via the shallow `(.hooks // {}) +` merge.
+Side-effect: peon-ping's Stop and SessionStart entries get reordered to
+position 1 in the array on each apply (the modify-script appends managed
+entries after the survivors). Functionally fine; sound just plays before
+the learning-capture / machine-banner hooks fire.
+
+Verification:
+  - `chezmoi execute-template < home/dot_Brewfile.tmpl` confirms tap +
+    `peon-ping` lines render in the right sections.
+  - `shellcheck --severity=warning` on the rendered chezmoi script: clean.
+  - `chezmoi diff` shows the three intended changes (Brewfile, new script,
+    settings.json reorder) and nothing else surprising.
+  - `peon status` confirms the runtime is wired up and the default pack
+    is installed.
+
+Decisions:
+  - Skipped MCP server install (kept hooks-only path; can add later).
+  - Default starter sound pack (just the Warcraft III Peon pack) instead
+    of `--all`. Future packs can be added via `peon packs install <name>`.
+  - Did NOT encode hooks in `modify_settings.json`. The hook script is a
+    symlink into the brew prefix that peon-ping-setup creates alongside
+    config.json, sound-pack symlinks, MCP, and trainer dirs. Replicating
+    that surface in chezmoi is more fragile than letting peon-ping-setup
+    own its layout. The design boundary stays clean: claude-guardrails
+    owns deny-rules + UserPromptSubmit, modify_settings.json owns
+    statusLine + learning-capture + secret-guard + machine-banner +
+    safety PreToolUse hooks, peon-ping owns its own event registrations.
+
+---
+
+## [2026-05-09] feat(S-62): secret-guard PreToolUse hook (anti-leak) @ Hans-Air-M4
+
+User asked for a Claude Code hook to prevent the assistant from echoing or
+reading 1Password-resolved values into the session transcript - the same
+shape as the existing `rm -rf` block hook. Spec: `docs/specs/S-62-secret-guard-pretooluse-hook.md`.
+
+Built a new `PreToolUse` hook that complements claude-guardrails'
+`scan-secrets` (which only inspects the user's prompt). This one inspects
+**Claude's outbound tool calls**:
+
+- `home/dot_claude/hooks/secret-guard/executable_secret-guard.sh` (new,
+  ~160 lines, mode 0755). Reads tool input on stdin, exits 2 with a styled
+  block message + audit-log line on match.
+- `home/dot_claude/modify_settings.json` registers the hook for matchers
+  `Bash`, `Read`, and `Edit|Write|MultiEdit`. Marker
+  `secret-guard/secret-guard.sh` added to the dedup-by-marker filter so
+  re-applies stay idempotent.
+
+Block rules:
+
+Seven iterations in this session, all visible in the spec test matrix:
+
+- **v1** (loose): treated any pipe as safe. User disproved with
+  `op read op://Personal/opencode-go/credential | paste-token`. Full key
+  landed in transcript before the Stop hook caught it.
+- **v2** (over-strict): pipes default to block, only `pbcopy`/`xclip`/
+  `wl-copy` allowlisted. Catches paste-token but blocks legitimate
+  `op read X | jq -r .field > /tmp/out`.
+- **v3** (terminal-aware): the rule is "does the secret reach
+  the topmost shell's terminal?" A pipeline is safe iff (a) capture form
+  (`$()` / backticks), (b) any stdout redirect (`>` / `>>` / `&>`)
+  anywhere in the pipeline -- a redirect anywhere breaks the secret
+  chain at that point, downstream gets empty stdin -- or (c) last stage
+  is in the no-echo allowlist (`pbcopy` / `xclip` / `wl-copy`).
+- **v3.1** (post-audit, shipped): user requested a pre-deploy audit
+  ("only block when secret prints/echoes to screen or saves to session
+  or log"). Audit found three real false negatives, each empirically
+  reproduced as `rc=0` against v3:
+    - **FN1** -- literal credential in the Bash command string itself
+      (e.g. `http POST ... Authorization:"Bearer sk-ant-..."`); the
+      command is captured verbatim into the JSONL transcript, leaks
+      regardless of stdout/stderr.
+    - **FN2** -- heredoc with UNQUOTED marker that expands a
+      secret-bearing variable (`cat <<EOF\n$TOKEN\nEOF`); the
+      pre-audit B3 rule only matched the `<<<` here-string form.
+    - **FN3** -- Edit/MultiEdit `old_string` carrying a literal
+      secret value, which the diff output then echoes into the
+      transcript.
+  v3.1 closes all three with rules B6 / B7 / W2 (see spec). New tests
+  53-57 prove each fix; tests 56 (quoted-marker heredoc) prove the
+  FN2 fix doesn't false-positive on literal-body heredocs.
+  Audit-log hygiene confirmed clean (timestamps + abstract reasons,
+  no values / commands / file content).
+- **v3.2** (post ultrathink-pass, shipped): user requested "ultrathink
+  double check one more time to see if there are other cases we
+  didn't cover." Did a categorical sweep across nine taxonomies:
+  (A) command-string leaks, (B) sub-command output leaks beyond
+  `op read`, (C) env-dump beyond `env`/`printenv`, (D) interpreter
+  leaks, (E) file-content leaks beyond the 7-pattern path list,
+  (F) indirection / dynamic dereference, (G) process substitution
+  / heredoc subtleties, (H) tool surfaces beyond Bash/Read/Edit,
+  (I) out-of-band channels. Found ~10 real GAP-FIX items (Tier 1
+  + Tier 2) and ~6 GAP-DOC items (Tier 3 + OOS).
+  Tier 1 (high-impact, daily-workflow):
+    - SSH private keys (`~/.ssh/id_*` excluding `*.pub`) added to
+      B5 + R1; `*.pub` explicitly allow-listed first to avoid the
+      broader id_* glob catching them.
+    - 1Password CLI alternates: B1 now also matches `op item get`,
+      `op signin --raw`, `op connect token create`, `op
+      service-account create`. Same terminal-aware safe-form check.
+    - macOS Keychain raw read: new B2b rule for `security
+      find-generic-password -w` / `-ws`. Terminal-aware.
+  Tier 2 (moderate-impact, common-on-this-machine):
+    - More credential file paths: `*.pem`, `*.p12`, `*.pfx`,
+      `~/.kube/config`, `~/.docker/config.json`, `~/.npmrc`,
+      `~/.pypirc`, `~/.cargo/credentials`, `~/.gem/credentials`,
+      `~/.git-credentials`, `~/.config/gh/hosts.yml`,
+      `~/.config/gcloud/application_default_credentials.json`.
+      Both B5 and R1.
+    - Env-dump variants: B4a now also catches bare `set` (no args);
+      new B4c for `declare -p` / `typeset -p` / `export -p`. Both
+      terminal-aware. Wrappers (`set -e`, `set --`, `env -u FOO
+      bar`) intentionally allowed via terminator-class anchoring.
+    - `gh auth token`: new B2c rule. Terminal-aware.
+    - Decryption: new B2d rule for `gpg -d`/`--decrypt`,
+      `openssl enc -d`, `openssl rsautl -decrypt`, `openssl
+      pkeyutl -decrypt`. Terminal-aware.
+    - Interpreter env-print: new B8 rule for `python|python3|node|
+      deno|ruby|perl -c|-e` reading a secret-bearing env var.
+      Layered three-signal check (interpreter form + env-access
+      syntax + secret-named identifier) keeps false positives down.
+      Terminal-aware.
+  Implementation note: closing B8 needed quote-aware segment
+  splitting in `is_safe_secret_call`. The naive `;`-replace
+  approach broke `python -c "import os; print(...)"` by treating
+  the `;` inside the python string as a logical separator,
+  splitting the redirect off from the call. Replaced with an awk
+  char-walker that tracks single/double-quote state. Tier 3 +
+  remaining OOS gaps (other PMs, indirection, base64, network
+  side channels, NotebookEdit / Task / WebFetch matchers,
+  PostToolUse content scanning) documented under Out-of-scope in
+  the spec.
+- **v3.3** (canonical-pattern pass, shipped): user asked the
+  natural follow-up: "now that this is locked down, how does
+  Claude actually copy/forward a key into a command that needs
+  it?" Enumerated 8 patterns across 3 use-cases (env var
+  pass-through; capture-then-use; file/stdin/clipboard handoff).
+  P1 (already-loaded env var), P2 (capture-then-use, single
+  Bash call), P4 (env-prefix exec), P5 (bash -c subshell), P6
+  (process substitution), P7 (file-based handoff with rm), P8
+  (clipboard) all verified rc=0 with the hook on. P3 (capture
+  across two Bash tool calls) documented as an anti-pattern
+  because subshells don't share state. Code change:
+  `is_safe_secret_call` now strips `<(...)` process substitution
+  alongside `$(...)` and backticks (~5 lines), so the cleanest
+  pattern for stdin-auth tools (`curl -H @<(op read 'op://...')`)
+  works without the bypass marker. Block message rewritten to
+  inline P1/P2/P4/P6/P7 snippets so Claude self-corrects on
+  first read instead of round-tripping or reaching for the
+  bypass marker. New `docs/secret-handling-cheatsheet.md` (~5
+  KB) is Claude-Read-able mid-session for the full pattern
+  reference + anti-pattern catalogue. Test matrix grew 7 cases
+  (100/100 green).
+- **v3.4** (ergonomics + defense-in-depth, shipped): user asked
+  "what else can we do to improve it" and selected the full
+  package. Seven additions:
+    - **A1**: Edit/Write path exemption for `tests/secret-guard.sh`
+      and `docs/secret-handling-cheatsheet.md`. Without this, the
+      hook blocks edits to its own test fixtures and example doc
+      once deployed (caught empirically when an edit to the hook
+      source itself contained an AWS-key example string in a
+      comment; rewrote the comment to drop the literal pattern).
+    - **D1**: Audit log entries now `[<UTC ts>] [<STATUS>] [<session>]
+      [<tool>] <reason>` (was `[<UTC ts>] <reason>`). STATUS in
+      `BLOCK` / `BYPASS` / `STOP-LEAK` / `POST-LEAK`. Bypass-marker
+      uses are now logged (previously silent: every bypass means a
+      deliberate leak, audit trail matters). Log rotation: cap at
+      1 MiB, .1 backup.
+    - **E1**: New `dotfiles secret-guard` (alias `sg`) CLI with
+      `explain '<cmd>'` (dry-run hook against a command, report
+      allow/block + rc), `test` (run matrix against deployed hook),
+      `log [--blocks|--bypasses|--leaks|--all]`, `doctor` (health
+      check). High-value debugging affordance.
+    - **G1**: CLAUDE.md rule #4 (Secrets) now references S-45 +
+      S-62 + the cheatsheet. Fresh sessions discover patterns from
+      project context.
+    - **B2 (defense-in-depth)**: New Stop hook
+      `secret-guard-stop.sh` scans the last assistant message in
+      the transcript for credential patterns; warn-only with audit
+      log + stderr. Detection-only by design (the message is
+      already on disk by Stop time). Registered via additive merge
+      in `modify_settings.json` under `hooks.Stop`.
+    - **B1 (defense-in-depth)**: New PostToolUse hook
+      `secret-guard-post.sh` scans `tool_response` (stdout / content
+      / stderr / array shapes) for credential patterns; same
+      warn-only model. Catches Read-of-unlisted-path leaks and
+      Bash-stdout-echoes-token leaks the PreToolUse hook cannot
+      see. Registered under `hooks.PostToolUse` with matcher
+      `Bash|Read|Edit|Write|MultiEdit`.
+    - **A2**: `run_onchange_after_secret-guard-test.sh.tmpl`
+      hash-tied to all three hook source files. Re-runs the
+      108-case matrix against the deployed hook on every apply
+      that touches any hook source; warns via `lib.sh` if any
+      test fails. Surfaces regressions when guardrails patterns
+      change or hooks are hand-edited.
+  Self-test in this round: Claude itself was hit by the
+  deployed hook twice while writing the v3.4 changes. First time:
+  an edit to the hook source contained an AWS access-key example
+  string in a comment (W1 fired correctly); fixed by rewording.
+  Second time: a CLI smoke test wrote `echo $CLOUDFLARE_API_TOKEN`
+  via the explain wrapper (B3 fired correctly); fixed with the
+  bypass marker for the test invocation. Both confirm the hook
+  works end-to-end. New tests 110-117 in the matrix; 108/108
+  green.
+
+| # | Tool | Block rule (v3) |
+|---|------|------|
+| B1 | Bash | `op read op://...` not in v3-safe form |
+| B2 | Bash | `secret-cache-read NAME` not in v3-safe form |
+| B3 | Bash | `echo`/`printf`/here-string of `$VAR` matching CLOUDFLARE_API_TOKEN, R2_SECRET_ACCESS_KEY, OP_SERVICE_ACCOUNT_TOKEN, OP_SESSION_*, or `*_TOKEN`/`*_SECRET`/`*_PASSWORD`/`*_PASSPHRASE`/`*_API_KEY`/`*_PRIVATE_KEY` |
+| B4 | Bash | bare `env`/`printenv` (no args); `printenv NAME` of a secret-bearing var |
+| B5 | Bash | `cat`/`bat`/`head`/`tail`/`less`/`more`/`xxd`/`hexdump` of secret-bearing files |
+| R1 | Read | `file_path` matches secret-bearing file list (`*/conf.d/secrets.fish`, `.netrc`, `.aws/credentials`, `~/.config/op/*`, `*.env`/`*.secrets`/`*.tokens`) |
+| B6 | Bash | heredoc with UNQUOTED marker (`<<EOF`) AND command references a secret-bearing variable. Quoted markers (`<<'EOF'`) preserve the body literally and are NOT blocked. |
+| B7 | Bash | command string itself contains a literal credential per `~/.claude/hooks/patterns/secrets.json`; command lands in the transcript verbatim |
+| **B2b** | Bash | macOS Keychain raw read: `security find-generic-password -w/-ws` (v3.2) |
+| **B2c** | Bash | `gh auth token` (v3.2) |
+| **B2d** | Bash | `gpg -d/--decrypt`, `openssl enc -d/rsautl -decrypt/pkeyutl -decrypt` (v3.2) |
+| **B4c** | Bash | `declare -p`, `typeset -p`, `export -p` print var defs incl. values (v3.2) |
+| **B8** | Bash | interpreter `-c/-e` (python/node/deno/ruby/perl) reading a secret-bearing env var (v3.2) |
+| W1 | Edit/Write/MultiEdit | `new_string` / `content` / `edits[].new_string` matches `~/.claude/hooks/patterns/secrets.json` (AKIA, sk-ant, ops_, PEM block, etc.) |
+| W2 | Edit/MultiEdit | `old_string` / `edits[].old_string` matches the same pattern set; the Edit diff echoes old_string into the transcript |
+
+What v3 fixed vs v2: `op read X | jq -r .field > /tmp/out`,
+`op read X | tee /tmp/x > /dev/null`, and multi-stage pipelines that end
+in a redirect are now allowed. Counter-tests still in the matrix prove
+`| paste-token`, `| jq`, `| tee` (without final `>`), `| grep`, `| bash`,
+`| xargs`, `2>&1 | grep`, `2> /tmp/err` (stdout still on terminal) are
+all blocked.
+
+Bypass: `# secret-guard: allow` per call. Wrappers (`env -u FOO cmd`,
+`env A=B cmd`), `dotfiles secret list` (names only), and `Read` against
+`*.tmpl` template files are allowed by design.
+
+Failure mode: missing jq or malformed JSON -> exit 0 (fail open).
+Audit log: `~/.cache/claude-secret-guard.log`.
+
+Verification (S-62 test matrix, `bash tests/secret-guard.sh`): **108/108
+green** on Hans-Air-M4 across seven iterations (v1 -> v2 -> v3 -> v3.1
+-> v3.2 -> v3.3 -> v3.4):
+
+- 52 cases from the initial v1->v3 development.
+- 5 cases from the v3.1 audit pass (FN1 literal credentials in Bash
+  command, FN2 heredoc expansion, FN2 inverse with quoted marker,
+  FN3 Edit old_string).
+- 36 cases from the v3.2 ultrathink pass: 20 BLOCK (Tier 1: SSH
+  keys, op alternates, macOS keychain; Tier 2: more credential
+  files, env-dump variants, gh, gpg, language interpreters) plus
+  16 ALLOW (boundary tests for each new rule, including: SSH
+  public keys must not match the private-key pattern; `op signin`
+  without `--raw` is fine; `set -e` / `set --` are flags, not
+  dumps; `python -c "..." > /tmp/x` is allowed via the new
+  quote-aware segment splitting in `is_safe_secret_call`).
+- 7 cases from the v3.3 canonical-pattern pass: P1 env var
+  passthrough (curl with `$CLOUDFLARE_API_TOKEN`), P2 capture-
+  then-use (single Bash call with `;`), P4 env-prefix exec, P5
+  bash -c subshell, P6 process substitution into curl `-H @-`,
+  P7 file-based handoff with `rm` cleanup, plus a generic ssh-
+  with-key sanity case. All rc=0.
+- 8 cases from the v3.4 ergonomics + defense-in-depth pass:
+  110/111 (Edit allowed on test-fixture / cheatsheet paths),
+  112 (same payload at any other path still blocks), 113
+  (audit log includes [STATUS] [session] [tool]), 114 (BYPASS
+  uses now logged), 115/116 (PostToolUse hook detects + silent
+  on clean), 117 (Stop hook detects in last assistant message).
+
+Plus 6 plumbing checks (shellcheck on hook + modify-overlay,
+idempotency f(f(x))==f(x), chezmoi-managed visibility, fail-open on
+missing jq, fail-open on malformed JSON).
+
+Audit-log hygiene confirmed clean across all iterations: timestamps
++ abstract reasons + path/pattern names; zero values, zero commands,
+zero file content recorded.
+
+S-45 (never echo resolved secret values) was a human/code discipline rule;
+this hook enforces it against Claude's tool calls too.
+
+Files touched:
+
+- `home/dot_claude/hooks/secret-guard/executable_secret-guard.sh` (new)
+- `home/dot_claude/modify_settings.json` (added marker dedup + 3 entries)
+
+---
+
 ## [2026-05-09] consolidate: single canonical /dotfiles-sync body + 2 latent fixes @ Mac mini
 
 User asked for a detailed comparison between the two `dotfiles-sync` skill
