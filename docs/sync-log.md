@@ -6,6 +6,25 @@ context.
 
 ---
 
+## [2026-05-09] sync (pass 2) @ Hans-Air-M4
+
+Follow-up to today's earlier sync, after PR #87 merged and peon-ping wired up.
+
+Claude skills (local - ~/.config/dotfiles/skills.local):
+  - peon-ping-config, peon-ping-log, peon-ping-toggle, peon-ping-use
+    (provisioned by peon-ping-setup; recreated automatically by the brew
+    package on every machine that installs peon-ping, so safe to suppress)
+
+SSH backup status:
+  - 3/3 disk keys backed up to 1P (id_ed25519 manually adopted via Desktop
+    paste, since op CLI 2.34 can't import existing SSH keys — memory note
+    sharpened: CLI creates Desktop-visible-but-functionally-broken zombies)
+  - 3/3 .local SSH config fragments backed up
+
+PR #87 merged (brew-bundle script-order fix + earlier sync log entry).
+
+---
+
 ## [2026-05-09] sync @ Hans-Air-M4
 
 Pulled `d5f2241..8668b79` (v0.6.3: S-62 secret-guard, peon-ping, sync fixes).
