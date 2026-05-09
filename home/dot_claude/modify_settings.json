@@ -22,6 +22,19 @@
 #   "solo-worker mode"                           -- soft-warn git push to protected
 #   "BLOCKED: Pipe-to-shell detected"            -- block curl|wget | bash/sh/zsh
 #   "BLOCKED: Destructive delete"                -- block rm -rf /|~|$HOME
+#   "secret-guard/secret-guard.sh"               -- S-62: block tool calls that
+#                                                   would leak 1Password secrets
+#                                                   to the transcript.
+#
+# Managed PostToolUse hooks (each keyed by unique marker in its command):
+#   "secret-guard-post.sh"                       -- S-62 PostToolUse: scan
+#                                                   tool_response for credential
+#                                                   patterns; warn-only.
+#
+# Managed Stop hooks (each keyed by unique marker in its command):
+#   "secret-guard-stop.sh"                       -- S-62 Stop: scan last
+#                                                   assistant message for
+#                                                   credential patterns; warn.
 #
 # Managed SessionStart hooks (keyed by unique marker):
 #   "machine-banner.sh"                          -- prints "Machine: user@host (model)"
@@ -82,8 +95,21 @@ echo "$INPUT" | jq \
     | .hooks = ((.hooks // {}) + {
         Stop: (
             ((.hooks.Stop // []) | map(select(
-                (.hooks // []) | map(.command // "" | contains("LEARNING CAPTURE CHECK")) | any | not
-            ))) + [{hooks: [{type: "command", command: $learning_cmd, timeout: 5}]}]
+                (.hooks // []) | map(.command // "" as $c |
+                    ($c | contains("LEARNING CAPTURE CHECK")) or
+                    ($c | contains("secret-guard-stop.sh"))
+                ) | any | not
+            ))) + [
+                {hooks: [{type: "command", command: $learning_cmd, timeout: 5}]},
+                {hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard-stop.sh", timeout: 10}]}
+            ]
+        ),
+        PostToolUse: (
+            ((.hooks.PostToolUse // []) | map(select(
+                (.hooks // []) | map(.command // "" | contains("secret-guard-post.sh")) | any | not
+            ))) + [
+                {matcher: "Bash|Read|Edit|Write|MultiEdit", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard-post.sh", timeout: 10}]}
+            ]
         ),
         PreToolUse: (
             ((.hooks.PreToolUse // []) | map(select(
@@ -91,12 +117,16 @@ echo "$INPUT" | jq \
                     ($c | contains("BLOCKED: Direct push to protected branch")) or
                     ($c | contains("solo-worker mode")) or
                     ($c | contains("BLOCKED: Pipe-to-shell detected")) or
-                    ($c | contains("BLOCKED: Destructive delete"))
+                    ($c | contains("BLOCKED: Destructive delete")) or
+                    ($c | contains("secret-guard/secret-guard.sh"))
                 ) | any | not
             ))) + [
                 {matcher: "Bash", hooks: [{type: "command", command: $pipe_shell_block_cmd}]},
                 {matcher: "Bash", hooks: [{type: "command", command: $git_push_warn_cmd}]},
-                {matcher: "Bash", hooks: [{type: "command", command: $rm_rf_block_cmd}]}
+                {matcher: "Bash", hooks: [{type: "command", command: $rm_rf_block_cmd}]},
+                {matcher: "Bash", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]},
+                {matcher: "Read", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]},
+                {matcher: "Edit|Write|MultiEdit", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]}
             ]
         ),
         SessionStart: (

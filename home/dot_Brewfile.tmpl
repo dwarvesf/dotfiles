@@ -19,6 +19,7 @@
 # ── Taps ──────────────────────────────────────────────────────────────
 # homebrew/bundle and homebrew/services are now built-in (deprecated as taps)
 tap "hashicorp/tap"
+tap "peonping/tap"            # game-character voice notifications for Claude Code (peon-ping)
 
 # ── Shell & Terminal ──────────────────────────────────────────────────
 brew "fish"
@@ -131,6 +132,7 @@ brew "agent-browser"          # CDP-based browser automation CLI for AI agents (
 brew "opencode"               # multi-LLM coding agent CLI (replaces legacy npm "opencode-ai" install — uninstall npm version first)
 cask "ollama-app"             # Ollama GUI + bundled CLI (symlinks /opt/homebrew/bin/ollama → Ollama.app/Contents/Resources/ollama; do not also declare brew "ollama" — they conflict)
 brew "playwright-cli"         # standalone Playwright runner (separate from npm package)
+brew "peonping/tap/peon-ping" # voice + overlay notifications when Claude Code needs attention. Wired up by run_onchange_after_peon-ping-setup.sh.tmpl
 # llm via: uv tool install llm
 # lightpanda (nightly headless browser for AI agents) installed via
 # .chezmoiscripts/run_onchange_after_install-lightpanda.sh.tmpl

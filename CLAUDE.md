@@ -20,7 +20,7 @@ These principles govern the repo's architecture. Don't violate them without expl
 
 3. **Multi-machine is a first-class use case.** Every change should consider: how does this behave when N machines run it? Per-machine state stays per-machine; shared state stays shared.
 
-4. **Secrets live in 1Password; Keychain is a per-machine cache.** Never commit secret values. Never use iCloud Keychain for these (per-machine isolation is a feature, not a limitation). `chezmoi apply` MUST NOT trigger 1P popups -- secrets resolve lazily at shell startup via `secret-cache-read`.
+4. **Secrets live in 1Password; Keychain is a per-machine cache.** Never commit secret values. Never use iCloud Keychain for these (per-machine isolation is a feature, not a limitation). `chezmoi apply` MUST NOT trigger 1P popups -- secrets resolve lazily at shell startup via `secret-cache-read`. **Resolved secret values must never reach the session transcript** (S-45 discipline rule, S-62 enforcer hook). When you need to use a credential, follow [`docs/secret-handling-cheatsheet.md`](docs/secret-handling-cheatsheet.md): prefer the auto-loaded env var (P1: just `$CLOUDFLARE_API_TOKEN` etc.), or capture-then-use in a single Bash call (P2: `TOKEN=$(op read 'op://...'); curl -H "Authorization: Bearer $TOKEN" url`). Bare `op read`, `cat ~/.netrc`, `echo $TOKEN_VAR`, etc. are blocked. Run `dotfiles secret-guard explain '<cmd>'` to dry-run any command against the hook.
 
 5. **Apply must be idempotent and silent.** Running `chezmoi apply` 100 times in a row should produce the same final state with zero interactive prompts (no 1P popups, no sudo prompts unless genuinely needed). If a script needs interactivity, it's likely the wrong abstraction.
 

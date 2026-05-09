@@ -1,0 +1,55 @@
+{{- $e := printf "%c" 27 -}}
+{{- if not (hasKey . "headless") -}}
+{{-   fail (printf "\n\n%s[38;5;204m  ✗ Missing config variable: headless%s[0m\n    Run: %s[38;5;78mchezmoi init%s[0m\n" $e $e $e $e) -}}
+{{- end -}}
+#!/bin/bash
+# Wire up peon-ping after brew bundle has installed it. peon-ping-setup
+# auto-detects installed AI-coding IDEs (~/.claude/, ~/.cursor/, etc.),
+# registers the appropriate hooks/plugins, downloads sound packs, and
+# creates the symlinks under ~/.claude/hooks/peon-ping/ that the hook
+# entries point at.
+#
+# Why a chezmoi script, not just brew bundle: brew installs the binary
+# but does not register hooks or download sound packs. peon-ping-setup
+# is the canonical wire-up step. It is idempotent on already-configured
+# systems.
+#
+# Why not encode hooks in modify_settings.json: the hook script
+# (~/.claude/hooks/peon-ping/peon.sh) is a symlink into the brew prefix
+# that peon-ping-setup creates alongside config.json, sound-pack
+# symlinks, MCP, and trainer dirs. Replicating that in chezmoi is more
+# fragile than letting peon-ping-setup own its layout. Hook entries
+# survive across applies because modify_settings.json's dedup filters
+# strip by marker (LEARNING CAPTURE CHECK, secret-guard-stop.sh,
+# machine-banner.sh) and peon-ping's commands don't match any of them;
+# the additive merge preserves them.
+#
+# Skipped on headless boxes (no GUI / no AI agent IDE).
+#
+# packs: default starter set  # bump this comment to force a re-run
+{{ if .headless }}
+exit 0
+{{ end }}
+
+set -eo pipefail
+
+LIB="$HOME/.config/dotfiles/lib.sh"
+# shellcheck source=/dev/null
+[ -f "$LIB" ] && source "$LIB" || { echo "dotfiles lib not found"; exit 1; }
+
+section "Wiring up peon-ping (hooks + sound packs)"
+
+if ! command -v peon-ping-setup >/dev/null 2>&1; then
+    warn "peon-ping-setup: not on PATH" \
+         "brew bundle should have installed peon-ping from the peonping/tap." \
+         "Re-run chezmoi apply, or: brew install peonping/tap/peon-ping"
+    exit 0
+fi
+
+if peon-ping-setup; then
+    script_ok "peon-ping wired up (run 'peon status' to inspect)"
+else
+    warn "peon-ping-setup: failed" \
+         "Hook entries or sound packs may be missing." \
+         "Run 'peon-ping-setup' manually and inspect the output."
+fi
