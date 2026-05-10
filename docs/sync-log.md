@@ -6,6 +6,36 @@ context.
 
 ---
 
+## [2026-05-11] secret-guard: quoted-heredoc body false-positive fix @ Hans-Air-M4
+
+Caught while pushing the S-63 ship commit. The hook blocked
+`git commit -m "$(cat <<'EOF' ... EOF)"` with B2 ('secret-cache-read'
+output would land in the transcript) because the message body
+documented the helper change. Two compounding causes in
+`is_safe_secret_call`:
+
+1. The literal token `secret-cache-read` sits inside a quoted-marker
+   heredoc (`<<'EOF' ... EOF`) which preserves the body as data, not a
+   call. Existing detection didn't know the difference.
+2. The `$()` strip uses the regex `\$\([^\(\)]*\)`, which can't match
+   when the body contains parens. Conventional-commit subjects
+   (`feat(secret-push) ... (S-63)`) defeat the strip on every commit
+   that mentions a hook-watched token.
+
+Fix: prepend a quoted-heredoc body strip step (awk, line-based) to
+`is_safe_secret_call`. UNQUOTED markers (`<<EOF`) keep variable
+expansion and remain B6's job. Three new tests in
+`tests/secret-guard.sh` (cases 131/132/133) cover commit-message
+bodies naming `secret-cache-read`, `op read`, and `security
+find-generic-password -ws`. Full suite: 115/115 green; shellcheck
+clean. Original user repro now exits 0 against the deployed hook.
+
+The bypass marker (` # secret-guard: allow`) and `SECRET_GUARD_MODE=
+warn-only` workarounds remain available, but conventional commits no
+longer need them.
+
+---
+
 ## [2026-05-11] sync: back up annas-fetch skill @ Hans-Air-M4
 
 Targeted sync to back up the new `annas-fetch` Claude Code skill built earlier today (member fast-download CLI for Anna's Archive). Skill drives the stdlib-only Python tool at `ops-toolkit/tools/annas-fetch/` (separate repo, separate commit); the skill itself goes here so it's available from any future Claude Code session on any machine.

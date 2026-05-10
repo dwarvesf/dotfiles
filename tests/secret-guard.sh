@@ -180,6 +180,17 @@ section "10b. ALLOW -- audit-pass negatives (no expansion or non-secret)"
 # from $CLOUDFLARE_API_TOKEN textually appearing in the heredoc body.
 run "56 heredoc <<'\''EOF'\'' literal body (FN2 inverse)" 0 '{"tool_name":"Bash","tool_input":{"command":"cat <<'\''EOF'\''\n$CLOUDFLARE_API_TOKEN\nEOF"}}'
 
+# Quoted heredoc body that NAMES a secret-call token (e.g. inside a
+# git commit message that explains a `secret-cache-read` change) is
+# documentation, not an invocation. The body must be stripped before
+# call-detection so B1/B2/B2b/B2c/B2d don't false-positive on the
+# literal token, even when the body contains parens that defeat the
+# $() strip (regression for `feat(secret-push) ... (S-63)` in the
+# message body).
+run "131 commit message body names secret-cache-read (B2 false-pos)" 0 '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"$(cat <<'\''EOF'\''\nfeat(secret-push): variadic targets (S-63)\n\nThe secret-cache-read helper now picks System.keychain when run as root.\nEOF\n)\""}}'
+run "132 commit message body names op read (B1 false-pos)" 0 '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"$(cat <<'\''EOF'\''\nfix(secrets): document op read patterns (S-49)\nEOF\n)\""}}'
+run "133 commit message body names security find-generic-password -ws (B2b)" 0 '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"$(cat <<'\''EOF'\''\nfeat(keychain): wrap security find-generic-password -ws (S-63)\nEOF\n)\""}}'
+
 section "10c. ALLOW -- ultrathink-pass boundary cases"
 # T1.1 inverse: SSH PUBLIC keys are safe (the .pub guard).
 run "80 cat ~/.ssh/id_ed25519.pub (T1.1 pub)"      0 '{"tool_name":"Bash","tool_input":{"command":"cat ~/.ssh/id_ed25519.pub"}}'
