@@ -320,10 +320,14 @@ the iOS-equivalent test by passing this one.
 
 ## Future work
 
-1. **Codify in `dotfiles secret push`.** Add a `--backing-store=system`
+1. ~~**Codify in `dotfiles secret push`.** Add a `--backing-store=system`
    flag; have the helper sudo-tee into System.keychain instead of
    user-keychain. Acceptance: applying the same fix to a third host
-   becomes one command.
+   becomes one command.~~ **Done in [S-63](S-63-secret-rotate-multi-host.md):**
+   `dotfiles secret push VAR target... --backing-store=system` handles
+   seed + rotate + multi-host in one invocation, with delete-then-add
+   semantics for System.keychain (the `-U` rotation gotcha is documented
+   there as Decision 2).
 2. **`dotfiles ssh-key push`.** Wraps the generate-in-1P → base64-pipe →
    register-with-upstream flow. Acceptance: bootstrapping a new
    `$SECONDARY` for git auth becomes one command.

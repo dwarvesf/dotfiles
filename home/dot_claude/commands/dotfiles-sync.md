@@ -241,6 +241,33 @@ if command -v op >/dev/null 2>&1 && op account list &>/dev/null; then
 fi
 ```
 
+### SA token rotation (notify-only)
+```bash
+# If the bearer in this shell's env is from a service account that's been
+# deleted upstream (typical "rotation" pattern: delete-then-recreate-with-
+# same-item-path), 1Password returns a specific 403 "Service Account
+# Deleted" on any op call. Flag and surface the S-63 one-liner so the user
+# doesn't have to remember it.
+#
+# Two cases produce the same error string:
+#   (a) keychain itself is stale (rotation just happened, no fix yet)  → run push
+#   (b) keychain is fresh but THIS shell's env is older                → exec fish
+# The output covers both branches; the user picks based on whether they've
+# already re-seeded.
+#
+# Fail-soft on every other error (network down, no op installed, signed
+# out, etc.) — those have other surfacing paths and aren't rotation signals.
+if command -v op >/dev/null 2>&1; then
+    OP_ERR=$(op whoami 2>&1 1>/dev/null || true)
+    if echo "$OP_ERR" | grep -q "Service Account Deleted"; then
+        echo "sa-token: op whoami reports SA deleted upstream"
+        echo "  If keychain already fixed: exec fish  (reloads env from fresh keychain)"
+        echo "  If not fixed:              dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN <hosts> --local --backing-store=system"
+        echo "  Spec: docs/specs/S-63-secret-rotate-multi-host.md"
+    fi
+fi
+```
+
 ### Claude-guardrails upstream release (notify-only)
 ```bash
 # Compare the pinned git tag in the onchange script against the most
@@ -487,8 +514,12 @@ After the diff body, the only markdown headings allowed are `### ✨ Recommended
 ─── ⚪ Notify-only ───
 🍃 guardrails       pinned v0.3.8 → latest v0.3.8  ·  up-to-date
 🍃 secrets cache    all cached
+🍃 sa token         valid  ·  Integration ID resolved
 ⚠️  ssh keys         1/2 disk key(s) without 1P backup
                     → dotfiles ssh adopt ~/.ssh/<name>
+⚠️  sa token         op whoami reports SA deleted upstream
+                    → exec fish (if keychain already fixed)
+                    → dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN <hosts> --local --backing-store=system (if not)
 🍃 hardcoded        no issues
 ```
 

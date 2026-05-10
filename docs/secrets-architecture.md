@@ -144,6 +144,10 @@ Where every secrets-related spec sits in the model.
 | [S-49](specs/S-49-dual-mode-op-via-fish-interceptor.md) | SA token | Path 2 + Path 4 | Auto-load + intercept interactive `op` to strip token | done |
 | [S-51](specs/S-51-multi-machine-sa-access.md) | SA token | Path 4 (multi-machine) | `is-login` gate + remote Keychain seed via `dotfiles secret push` | done |
 | **S-52** | (this synthesis doc) | meta | The map above the chain | done |
+| [S-53](specs/S-53-headless-mac-credential-pattern.md) | SA token | Path 4 (backing store) | System.keychain replaces login.keychain for SSH/mosh path; per-machine SSH key for outbound git | done |
+| [S-61](specs/S-61-batch-secret-cache-read.md) | All cached secrets | Path 4 (perf) | `secret-cache-read --batch` collapses N forks into one fish-startup call | done |
+| [S-62](specs/S-62-secret-guard-pretooluse-hook.md) | All resolved values | Path 4 (anti-leak) | PreToolUse + Stop + PostToolUse hooks block secret-leaking outbound tool calls | done |
+| [S-63](specs/S-63-secret-rotate-multi-host.md) | All registered secrets | Path 4 (rotation/seed) | Multi-host upsert: variadic targets + `--backing-store=login\|system` + `--local`; auto-detect delete-then-add; neg-cache cleanup | proposed |
 
 Reading the table: most slices are about path 4 (the SA bearer cache) on
 1P-backed classes. Paths 1, 3, 5 each have one or two specs; path 6 has
@@ -159,10 +163,7 @@ in scattered TODOs. Each entry: status, blocker (if any), next step.
 
 ### Q1. SA token rotation across N machines
 
-**Status:** open. Today's `dotfiles secret push` is per-remote and manual.
-**Blocker:** none functional; ergonomics get worse as N grows.
-**Next step:** if N > 2, design `dotfiles secret push --all` that reads a
-machine list from a config file. Defer until the third machine appears.
+**Status:** ~~open~~ closed by [S-63](specs/S-63-secret-rotate-multi-host.md) on 2026-05-10. `dotfiles secret push` now takes variadic targets (one or more SSH aliases plus optional `--local`), iterates sequentially, and emits a per-target verdict + summary. Auto-detect upsert (delete-then-add) handles seed + rotation cases on both `--backing-store=login` (default, S-51 path) and `--backing-store=system` (S-53 path). The "machine list as a config file" idea remains deferred (Q2) because N=2 today is fine with explicit args; revisit when the manual host list becomes painful.
 
 ### Q2. 3+ machines (and machine list as a first-class concept)
 
@@ -384,6 +385,7 @@ When an operations cookbook lands at `docs/operations/YYYY-MM-*.md`:
 - [`1password.md`](1password.md) — single-machine model + day-to-day commands (the manual)
 - [`1password-multi-machine.md`](1password-multi-machine.md) — multi-machine extension (the manual)
 - [`operations/2026-05-mini-sa-seed.md`](operations/2026-05-mini-sa-seed.md) — example operations cookbook (author's specific S-51 rollout)
+- [`operations/2026-05-10-sa-rotation-air-mini.md`](operations/2026-05-10-sa-rotation-air-mini.md) — author's specific S-63 rollout (2026-05-10 SA rotation across Air + Mini that triggered the spec)
 - [`tasks.md`](tasks.md) — chronological completed-spec index
 - [`sync-log.md`](sync-log.md) — per-machine sync history
 - [`decisions/`](decisions/) — ADRs (why chezmoi, why fish, why 1P, etc.)

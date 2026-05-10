@@ -35,6 +35,8 @@ FRAMEWORK_DOCS=(
     "home/dot_config/fish/functions/dotfiles.fish"
     "home/dot_config/fish/conf.d/secrets.fish.tmpl"
     "home/dot_local/bin/executable_secret-cache-read"
+    "docs/specs/S-63-secret-rotate-multi-host.md"
+    "home/dot_local/bin/executable_secret-upsert-target"
 )
 
 # Files that ARE allowed to contain personal context (author's records).
@@ -42,6 +44,7 @@ FRAMEWORK_DOCS=(
 # the cookbook is suspiciously generic and we want to know.
 OPERATIONS_DOCS=(
     "docs/operations/2026-05-mini-sa-seed.md"
+    "docs/operations/2026-05-10-sa-rotation-air-mini.md"
 )
 
 # Personal markers. Assembled from parts so this script's source does not
