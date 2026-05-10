@@ -36,6 +36,22 @@ longer need them.
 
 ---
 
+## [2026-05-11] sync: back up annas-fetch skill @ Hans-Air-M4
+
+Targeted sync to back up the new `annas-fetch` Claude Code skill built earlier today (member fast-download CLI for Anna's Archive). Skill drives the stdlib-only Python tool at `ops-toolkit/tools/annas-fetch/` (separate repo, separate commit); the skill itself goes here so it's available from any future Claude Code session on any machine.
+
+Claude skills (core):
+  - added: `~/.claude/skills/annas-fetch/SKILL.md`
+
+Untracked-but-deferred this sync (existing daily-life noise, not today's goal):
+  - brew: hub, ollama, pipx, python@3.10, the_silver_searcher, yarn
+  - cask: microsoft-auto-update
+  - chezmoi status: `.claude/commands/dotfiles-sync.md` source-modified (separate work)
+
+Skipped notify-only checks (SSH backup, secret cache, guardrails) since intent was targeted; rerun `/dotfiles-sync` for a full audit.
+
+---
+
 ## [2026-05-10] S-63 ship + 2026-05-10 SA rotation event @ Hans-Air-M4
 
 Triggered by today's 1Password SA rotation. Pre-S-63 rotation flow was
