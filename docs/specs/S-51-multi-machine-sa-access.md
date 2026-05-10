@@ -165,7 +165,7 @@ choice is operational, not codified in dotfiles.
 | Trade-off | Rationale |
 |---|---|
 | Secrets now load even in non-interactive SSH login shells | This is the entire point of S-51. The widening is intentional. Non-login subshells (`fish -c '...'` without `-l`) still don't load. |
-| Token rotation requires re-running `dotfiles secret push` per remote | Acceptable; SA tokens rotate rarely. Could be automated later if rotation becomes frequent. |
+| Token rotation requires re-running `dotfiles secret push` per remote | Acceptable; SA tokens rotate rarely. ~~Could be automated later if rotation becomes frequent.~~ **Done in [S-63](S-63-secret-rotate-multi-host.md): variadic targets in one invocation.** |
 | $SECONDARY's auto-login (or equivalent unlock) choice is operational, not codified | Different homes / offices have different threat models. The dotfiles repo describes the trade-off; the user picks. |
 | Keychain-locked-after-reboot edge case persists | Not a dotfiles problem to solve; auto-login or post-reboot GUI login covers it. Documented. |
 | iOS-driven `git push` from $SECONDARY still requires per-iOS-client SE keys | Out of scope. No clean fix from inside dotfiles. Documented as a future option. |
@@ -346,6 +346,8 @@ ssh $SECONDARY_SSH_ALIAS -- fish -l -c 'string sub -l 4 -- "$OP_SERVICE_ACCOUNT_
 | [S-47](S-47-agent-token-opt-in-wrapper.md) | Opt-in wrapper | amended by S-49 |
 | [S-49](S-49-dual-mode-op-via-fish-interceptor.md) | Dual-mode `op` interceptor | done |
 | **S-51** | **Multi-machine extension** | **proposed (this spec)** |
+| [S-53](S-53-headless-mac-credential-pattern.md) | System.keychain backing + per-machine SSH key | done |
+| [S-63](S-63-secret-rotate-multi-host.md) | Multi-host upsert (`secret push` variadic + System.keychain) | proposed |
 
 S-46 is independent of S-51 and can land before, after, or never. The
 multi-machine extension does not depend on broadening the SA's vault scope.

@@ -6,6 +6,62 @@ context.
 
 ---
 
+## [2026-05-10] S-63 ship + 2026-05-10 SA rotation event @ Hans-Air-M4
+
+Triggered by today's 1Password SA rotation. Pre-S-63 rotation flow was
+"paste 3 commands per host, hope you remembered delete-then-add for
+System.keychain." Two pain points surfaced:
+
+1. `add -U` on `/Library/Keychains/System.keychain` over non-TTY SSH
+   silently fails with `User interaction is not allowed` + `already
+   exists`, exit 0, no value change. macOS gates ACL updates behind a
+   GUI prompt that piped SSH can't satisfy. S-53 § B documents
+   first-seed only; rotation isn't covered.
+2. `secret-cache-read` neg-cache `.miss` markers (24h TTL, S-61) survive
+   a rotation, so the next login still skips the slow path even though
+   it would now succeed. Manual `rm` per VAR per host.
+
+S-63 codifies both fixes inside `dotfiles secret push`:
+  - Variadic targets after `VAR_NAME`. Per-target ✓/✗ verdict + summary.
+    Sequential iteration (parallel sudo/biometric prompts interleave illegibly).
+  - `--backing-store=login|system` flag (default `login` for backwards-compat).
+    System path uses sudo + delete-then-add. Login path also delete-then-add
+    (one extra keychain op; subsumes both stores under one code path).
+  - `--local` opts the local machine into the iteration. Local first, then
+    remotes (keeps biometric/sudo prompts at the local terminal first).
+  - Per-target failure isolation: a flaky target doesn't abort the others;
+    final exit code is non-zero if any failed.
+  - Negative-cache `.miss` cleanup as a side-effect of every successful seed.
+
+Implementation:
+  - New bash helper `home/dot_local/bin/executable_secret-upsert-target`
+    (per-target probe + delete + add + verify + neg-clear). Pulled out of
+    fish because remote sudo + heredocs + fish quoting is unreadable past
+    2 layers. Mirrors the fish/bash split from `secret-cache-read` (S-61).
+  - Replaced `case push` block in `home/dot_config/fish/functions/dotfiles.fish`
+    (variadic arg parsing + flag handling + iteration loop).
+  - `scripts/test-doc-discipline.sh` extended: S-63 spec + new helper added
+    to FRAMEWORK_DOCS (placeholder-clean); 2026-05-10 cookbook added to
+    OPERATIONS_DOCS (must contain author's specifics).
+  - S-51 § Trade-offs row 2 + spec chain updated. S-53 § Future work item 1
+    closed.
+  - `docs/secrets-architecture.md`: spec table extended (S-53, S-61, S-62,
+    S-63 rows), Q1 closed, operations cookbook reference added.
+  - `docs/tasks.md`: S-63 row inserted; updated banner to v0.6.4.
+  - New operations cookbook `docs/operations/2026-05-10-sa-rotation-air-mini.md`
+    documents today's specific rotation across Air + Mini, including the
+    pre-S-63 manual paste-job, the post-S-63 one-liner equivalent, and the
+    secret-guard hook bypasses needed for legitimate `op read | ssh ...`
+    pipelines.
+
+Smoke-tested S-63 against `mini-tieubao` (System.keychain backing store).
+Full E2E with `--local` deferred since the local Mini-side seed already
+happened earlier today via the manual paste flow.
+
+Versioning: v0.6.4 patch (additive, no breaking change).
+
+---
+
 ## [2026-05-09] sync (pass 2) @ Hans-Air-M4
 
 Follow-up to today's earlier sync, after PR #87 merged and peon-ping wired up.

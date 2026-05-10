@@ -269,39 +269,87 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                     end
 
                 case push
-                    # S-51: seed a remote machine's Keychain with a registered secret's
-                    # value, without requiring biometric on the remote. Read locally via
-                    # `op read` (uses your biometric session on this machine), pipe over
-                    # SSH, write to the remote login keychain via security(1). Idempotent.
-                    if test (count $argv) -lt 4
-                        echo "Usage: dotfiles secret push VAR_NAME ssh-target"
-                        echo "Example: dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN remote-host"
+                    # S-51 / S-53 / S-63: write a registered secret onto one or more
+                    # machines' keychains. Reads value locally via biometric (S-49
+                    # dual-mode), pipes over SSH per target, never echoes the value.
+                    # Per-target flow: probe, delete (idempotent), add, verify by
+                    # read-back, clear stale neg-cache. Auto-detect upsert subsumes
+                    # both seed and rotation cases. See S-63 for the full design,
+                    # including why delete-then-add (not `add -U`) for System.keychain.
+                    if test (count $argv) -lt 3
+                        echo "Usage: dotfiles secret push VAR_NAME TARGET [TARGET...] [--backing-store=login|system] [--local]"
                         echo ""
-                        echo "  Reads the value from 1Password locally (biometric), pipes over SSH,"
-                        echo "  and writes to the remote user's login keychain. The value never"
-                        echo "  appears on the remote command line or in shell history."
-                        echo "  Re-run after a token rotation to update the remote cache."
+                        echo "Examples:"
+                        echo "  dotfiles secret push CLOUDFLARE_API_TOKEN remote-host"
+                        echo "    # S-51 single-host login-keychain seed (default backing)"
+                        echo "  dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN remote-host --backing-store=system"
+                        echo "    # S-53 System.keychain seed for a headless host"
+                        echo "  dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN host-a host-b --backing-store=system"
+                        echo "    # S-63 multi-host rotation"
+                        echo "  dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN remote-host --local --backing-store=system"
+                        echo "    # Local + remote in one shot"
+                        echo ""
+                        echo "  Reads the value from 1Password locally (biometric), pipes over SSH per"
+                        echo "  target. Value never appears in command line, history, or scrollback."
+                        echo "  Re-run after a token rotation to update each target's cache."
                         return 1
                     end
 
-                    set -l var $argv[3]
-                    set -l ssh_target $argv[4]
+                    # Parse: argv[3] is VAR_NAME (first non-flag positional), rest is
+                    # targets + flags in any order. Variadic targets allowed.
+                    set -l backing login
+                    set -l include_local 0
+                    set -l targets
+                    set -l var ''
+                    set -l first_pos 1
+                    for a in $argv[3..]
+                        switch $a
+                            case '--backing-store=*'
+                                set backing (string replace -r '^--backing-store=' '' -- $a)
+                            case --local
+                                set include_local 1
+                            case '--*'
+                                echo "✗ unknown flag: $a"
+                                return 1
+                            case '*'
+                                if test $first_pos -eq 1
+                                    set var $a
+                                    set first_pos 0
+                                else
+                                    set targets $targets $a
+                                end
+                        end
+                    end
 
+                    # Validate
+                    if test -z "$var"
+                        echo "✗ VAR_NAME missing"
+                        return 1
+                    end
+                    switch $backing
+                        case login system
+                            # ok
+                        case '*'
+                            echo "✗ invalid --backing-store=$backing (use login or system)"
+                            return 1
+                    end
+                    if test (count $targets) -eq 0; and test $include_local -eq 0
+                        echo "✗ no targets given (need at least one ssh-alias and/or --local)"
+                        return 1
+                    end
+
+                    # VAR registration check
                     set -l data (chezmoi source-path)/.chezmoidata/secrets.toml
                     if not grep -q "^$var = " $data
                         echo "✗ $var not registered (see 'dotfiles secret list')"
                         return 1
                     end
-
                     set -l ref (grep "^$var = " $data | sed 's/.*= //;s/"//g')
 
-                    # Force biometric path. Subprocess fish (e.g. invoked from a non-fish
-                    # parent shell) doesn't trigger the S-49 interactive-only interceptor,
-                    # so `op read` would default to bearer auth and fail to read items
-                    # outside the SA's vault scope. The `op://Private/op-service-account-*`
-                    # ref is the canonical example: SA cannot read its own credential by
-                    # design (S-46 defense in depth). Drop the token explicitly so this
-                    # helper always uses the user's full-vault biometric session.
+                    # Read value once via biometric. Drop OP_SERVICE_ACCOUNT_TOKEN from
+                    # env so `op read` falls through to the biometric session, regardless
+                    # of how this fish was spawned. The SA cannot read its own credential
+                    # by design (S-46), so SA-bearer-auth would fail for op-service-* refs.
                     set -l val (env -u OP_SERVICE_ACCOUNT_TOKEN op read "$ref" 2>/dev/null)
                     if test -z "$val"
                         echo "✗ op read $ref returned empty (not signed in, wrong ref, or network)"
@@ -309,61 +357,40 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                         return 1
                     end
 
-                    # Probe the SSH target before piping the value, so a typo doesn't
-                    # send the secret into a void.
-                    if not ssh -o BatchMode=yes -o ConnectTimeout=5 $ssh_target true 2>/dev/null
-                        echo "✗ cannot reach $ssh_target via SSH (key auth or hostname issue)"
-                        return 1
+                    # Effective target list. Local goes first so the operator's biometric
+                    # focus stays on the local machine before SSHing out.
+                    set -l effective_targets
+                    if test $include_local -eq 1
+                        set effective_targets local
                     end
+                    set effective_targets $effective_targets $targets
 
-                    # Remote command: invoke bash explicitly so $(cat) works regardless
-                    # of the remote user's login shell. Stdin carries the value. -A is
-                    # required so the entry is readable from any user-owned process
-                    # (GUI fish OR SSH-originated fish), matching `secret-cache-read`'s
-                    # caching ACL. See S-51 multi-machine doc for why.
-                    set -l write_cmd "bash -c 'security add-generic-password -a \"\$USER\" -s \"$var\" -w \"\$(cat)\" -A -U 2>&1'"
-                    set -l write_out (echo -n $val | ssh $ssh_target $write_cmd 2>&1)
-
-                    # Verify by reading back: the prefix of the value should match what
-                    # we sent. Avoids relying on the remote command's exit propagation
-                    # through the SSH login-shell wrapper (which is unreliable for
-                    # bash -c invocations under a fish login shell).
-                    set -l read_cmd "bash -c 'security find-generic-password -a \"\$USER\" -s \"$var\" -w 2>/dev/null | head -c 4'"
-                    set -l read_back (ssh $ssh_target $read_cmd 2>/dev/null)
-                    set -l expected_prefix (string sub -l 4 -- $val)
-
-                    if test "$read_back" = "$expected_prefix"
-                        echo "✓ Seeded $var on $ssh_target. (verified by read-back)"
-                    else
-                        echo "✗ remote keychain write failed."
-                        if string match -q "*Write permissions error*" -- "$write_out"; or string match -q "*User interaction is not allowed*" -- "$write_out"
-                            echo "  Cause: the remote login keychain is locked, and SSH key-auth"
-                            echo "  sessions cannot show the unlock dialog."
-                            echo ""
-                            echo "  Fix one of:"
-                            echo "    1. Walk to $ssh_target and log in at the screen (one-time per reboot)."
-                            echo "    2. Enable auto-login for the user (System Settings → Users & Groups)."
-                            echo "    3. Run from a session that already lives inside the remote GUI"
-                            echo "       login (e.g. tmux attach into a console-launched session)."
-                            echo "  See docs/1password-multi-machine.md for details."
+                    # Iterate sequentially. Helper prints its own ✓/✗ verdict per target;
+                    # we only count outcomes and emit the summary.
+                    set -l ok 0
+                    set -l fail 0
+                    for t in $effective_targets
+                        if printf '%s' $val | secret-upsert-target $var $backing $t
+                            set ok (math $ok + 1)
                         else
-                            echo "  Remote output:"
-                            for line in (string split \n -- $write_out)
-                                echo "    $line"
-                            end
+                            set fail (math $fail + 1)
                         end
-                        return 1
                     end
+
+                    echo "---"
+                    echo "Summary: $ok succeeded, $fail failed (of "(count $effective_targets)" targets, backing=$backing)"
+                    test $fail -eq 0
 
                 case ''
                     echo "Usage: dotfiles secret <add|rm|list|refresh|push>"
                     echo ""
-                    echo "  add VAR \"op://...\"     Register a secret"
-                    echo "  rm VAR                 Unregister a secret"
-                    echo "  list                   Show all bindings (with cache status)"
-                    echo "  refresh VAR            Clear Keychain cache, re-fetch from 1Password"
-                    echo "  refresh --all          Refresh all cached secrets"
-                    echo "  push VAR ssh-target    Seed a remote machine's Keychain (S-51)"
+                    echo "  add VAR \"op://...\"                          Register a secret"
+                    echo "  rm VAR                                       Unregister a secret"
+                    echo "  list                                         Show all bindings (with cache status)"
+                    echo "  refresh VAR                                  Clear Keychain cache, re-fetch from 1Password"
+                    echo "  refresh --all                                Refresh all cached secrets"
+                    echo "  push VAR target [target...] [--backing-store=login|system] [--local]"
+                    echo "                                               Seed/rotate a secret on one or more machines (S-51, S-53, S-63)"
 
                 case '*'
                     echo "Unknown secret command: $argv[2]"
