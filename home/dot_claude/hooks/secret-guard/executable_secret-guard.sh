@@ -262,6 +262,44 @@ bypass_marker() {
 is_safe_secret_call() {
     local cmd="$1" call_re="$2"
 
+    # 0. Strip QUOTED-marker heredoc bodies. `<<'EOF'` and `<<"EOF"`
+    #    (plus `<<-` indented variants) preserve the body literally
+    #    with no shell expansion -- so any call-token sitting inside
+    #    the body is documentation/data, not an executable invocation.
+    #    Without this strip, a `git commit -m "$(cat <<'EOF' ... EOF)"`
+    #    whose message body mentions `secret-cache-read` / `op read` /
+    #    `security find-generic-password` would false-positive on
+    #    B1 / B2 / B2b / B2c / B2d / B4a / B4c / B8 (which all gate
+    #    through this function). The downstream `$()` / backtick / `<()`
+    #    strip on line ~278 also fails when the heredoc body contains
+    #    parens (e.g. a conventional-commit subject `feat(scope): ...`),
+    #    which is the actual user-visible regression that motivated
+    #    this step. UNQUOTED markers (`<<EOF`, `<<-EOF`) keep variable
+    #    expansion live and are intentionally NOT stripped here -- rule
+    #    B6 inspects them for secret-name derefs.
+    cmd=$(printf '%s' "$cmd" | awk '
+    BEGIN { in_hd = 0; marker = ""; dash_flag = 0 }
+    {
+        if (in_hd) {
+            check = $0
+            if (dash_flag) sub(/^[[:space:]]+/, "", check)
+            if (check == marker) in_hd = 0
+            next
+        }
+        if (match($0, /<<-?[\047"][A-Za-z_][A-Za-z0-9_]*[\047"]/)) {
+            tok = substr($0, RSTART, RLENGTH)
+            dash_flag = (substr(tok, 3, 1) == "-")
+            mtok = tok
+            sub(/^<</, "", mtok)
+            sub(/^-/, "", mtok)
+            sub(/^[\047"]/, "", mtok)
+            sub(/[\047"]$/, "", mtok)
+            marker = mtok
+            in_hd = 1
+        }
+        print
+    }')
+
     # 1. Strip capture / no-stdout-leak constructs. Single-level only;
     #    deeply nested forms fall through to the segment check below.
     #      `$(...)`  -- command substitution: stdout captured into
