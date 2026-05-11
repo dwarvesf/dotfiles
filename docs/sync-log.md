@@ -6,6 +6,26 @@ context.
 
 ---
 
+## [2026-05-11] sync @ Hans Air M4
+
+Claude skills (core):
+  - added: `local-ocr` (wraps the local-ocr CLI in ops-toolkit; covers SPEC-004
+    Mode B auto-absorb and the new SPEC-006 Mode D blind-absorb path. Body
+    extended this session with Mode D trigger phrases, the blind-absorb
+    workflow, hard rules around `.values.json` and inline image uploads, and
+    a pointer to ops-toolkit `USAGE-blind-absorb.md`)
+
+Claude skills (re-add drift, pre-existing):
+  - `annas-fetch/SKILL.md` — added `--sort downloads` documentation, stats
+    API endpoint reference, and intent-split table for picking the right
+    sort. Drift from earlier work; not from this session.
+
+Scripts (applied):
+  - `run_onchange_after_secret-guard-test.sh` — passed self-test against the
+    deployed hook (S-62 spec test matrix; 1 PASS / 0 FAIL).
+
+---
+
 ## [2026-05-11] secret-guard: quoted-heredoc body false-positive fix @ Hans-Air-M4
 
 Caught while pushing the S-63 ship commit. The hook blocked

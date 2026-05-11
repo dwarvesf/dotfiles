@@ -49,7 +49,18 @@ python3 ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/annas_fetch.py \
 
 No key needed for search. Default `--sort popularity` ranks by `mirror_count + format_quality + 0.5*recency + edition_bonus`. Output columns: `MD5  SCORE  EXT  YEAR  Nm  e<N>  TITLE` (`Nm` = mirror count; `e<N>` only shown when explicit edition > 1).
 
-**Intent split (important)**: `popularity` answers "the version most people read"; `--sort newest` answers "the absolute latest upload, even if barely circulated". The popularity sort includes a capped edition bonus so 2nd/3rd editions usually surface above older editions of the same book — but mirror count still dominates for similarly-edition'd results. If the user asks "is there a newer edition?" and popularity didn't surface one, retry with `--sort newest`.
+**Intent split (important)**: pick the sort by what the user actually wants:
+
+| User intent | Sort | Why |
+|---|---|---|
+| "the version most people read" / mainstream pick | `popularity` (default) | Mirror count + format + recency. Replication-weighted; correlates with demand on mainstream titles but biased on niches. |
+| "the version actually downloaded the most" | `--sort downloads` | Real member fast-download counts via `/dyn/md5/inline_info/<md5>`. The demand metric. Use for niche / self-published topics where mirror count diverges from readership. |
+| "the absolute latest upload, even if barely circulated" | `--sort newest` | AA server-side date sort. |
+| "filter to actually-popular books" | `--min-downloads N` | Filter rows below N downloads; implies enrichment. |
+
+Popularity includes a capped edition bonus so 2nd/3rd editions usually surface above older editions, but mirror count dominates within the same edition. If the user asks "is there a newer edition?" and popularity didn't surface one, retry with `--sort newest`. If the user explicitly says "most downloaded" or "popular by readers", use `--sort downloads`.
+
+**`--sort downloads` cost**: one extra HTTP call per result (parallelized at 10 workers, ~1s for 30 results). Skip when the user just wants a quick mainstream pick.
 
 Show top 5-10 results to the user. Ask which to fetch unless one is an unambiguous match (e.g., user said "DDIA" and the top result is a 2-mirror epub of DDIA).
 
@@ -105,3 +116,4 @@ Report to the user:
 - Spec: `ops-toolkit/tools/annas-fetch/SPEC.md`
 - Tests: `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` (no network) plus `RUN_LIVE_SMOKE=1 python3 tests/smoke_live.py` (network, no fetch)
 - API: `GET /dyn/api/fast_download.json?md5=<hash>&key=<member_key>&path_index=<0..2>&domain_index=<0..2>` → JSON `{download_url, account_fast_download_info, ...}` or `{error, ...}`
+- Stats API (no key): `GET /dyn/md5/inline_info/<hash>` → `{downloads_total, lists_count, great_quality_count, comments_count, reports_count}`. The CLI uses this for `--sort downloads` and `--min-downloads`.
