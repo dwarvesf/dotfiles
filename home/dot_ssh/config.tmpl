@@ -16,6 +16,24 @@ Host *
 Host *
   IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 {{- end }}
+
+# Includes MUST come before any named Host block. OpenSSH's Include
+# directive inherits the surrounding Host context: when placed after a
+# `Host github.com` block (or any other named Host), the included file's
+# Host declarations get treated as nested under that parent and silently
+# fail to apply for their stated targets. Verified 2026-05-10 with a
+# minimal repro: `Host github.com` + `Include config.d/*` + a Host block
+# inside the include → the include is *read* (verbose `-v` shows
+# "Reading configuration data .../config.d/X") but *no* "Applying
+# options" line, and `ssh -G` reports the wrong identity file. Moving
+# Includes above the named-Host blocks fixes it cleanly.
+
+# OrbStack Linux VMs
+Include ~/.orbstack/ssh/config
+
+# Modular host configs
+Include config.d/*
+
 {{ if stat (joinPath .chezmoi.homeDir ".ssh/id_ed25519_github") -}}
 # Per-machine GitHub key (S-53 recipe; S-58 ratify). Block deploys only
 # when ~/.ssh/id_ed25519_github exists; fresh machines without S-53 done
@@ -26,9 +44,3 @@ Host github.com
   IdentityFile ~/.ssh/id_ed25519_github
   IdentitiesOnly yes
 {{- end }}
-
-# OrbStack Linux VMs
-Include ~/.orbstack/ssh/config
-
-# Modular host configs
-Include config.d/*
