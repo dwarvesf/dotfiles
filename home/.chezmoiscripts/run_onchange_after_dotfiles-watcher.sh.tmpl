@@ -1,0 +1,121 @@
+{{- $e := printf "%c" 27 -}}
+{{- if not (hasKey . "headless") -}}
+{{-   fail (printf "\n\n%s[38;5;204m  ✗ Missing config variable: headless%s[0m\n    Run: %s[38;5;78mchezmoi init%s[0m\n" $e $e $e $e) -}}
+{{- end -}}
+#!/bin/bash
+# Wire the dotfiles watcher agents.
+#
+# 1. Generate ~/Library/LaunchAgents/com.truonghan.dotfiles-watcher.plist from
+#    the current `chezmoi managed` set. Each managed file becomes its own leaf
+#    WatchPath so launchd fires for in-place edits inside subdirs (which it
+#    cannot do via a parent-dir watch alone).
+# 2. bootout + bootstrap both agents (WatchPaths + fswatch).
+#
+# Working-tree only: the agents call ~/.local/bin/dotfiles-watcher-tick which
+# runs `chezmoi re-add` on drifted files. NO auto-commit, NO auto-push.
+#
+# managed-set fingerprint: {{ output "chezmoi" "managed" | sha256sum }}
+{{ if .headless }}
+# Headless box: no IDE config to watch, skip wiring.
+exit 0
+{{ end }}
+set -eo pipefail
+
+LIB="$HOME/.config/dotfiles/lib.sh"
+# shellcheck source=/dev/null
+[ -f "$LIB" ] && source "$LIB" || { echo "dotfiles lib not found"; exit 1; }
+
+section "Wiring dotfiles watcher (WatchPaths + fswatch)"
+
+CHEZMOI=$(command -v chezmoi || true)
+if [ -z "$CHEZMOI" ]; then
+    warn "chezmoi not on PATH" \
+         "Cannot regenerate WatchPaths plist without chezmoi."
+    exit 1
+fi
+
+LAUNCH_DIR="$HOME/Library/LaunchAgents"
+LOG_DIR="$HOME/Library/Logs"
+WATCHPLIST="$LAUNCH_DIR/com.truonghan.dotfiles-watcher.plist"
+FSWATCHPLIST="$LAUNCH_DIR/com.truonghan.dotfiles-watcher-fswatch.plist"
+TICK="$HOME/.local/bin/dotfiles-watcher-tick"
+
+mkdir -p "$LAUNCH_DIR" "$LOG_DIR"
+
+# ── Regenerate the WatchPaths plist from chezmoi managed ────────────
+# Filter to leaf files that exist under $HOME. Source-only entries like
+# .chezmoiscripts/* don't have a destination and are dropped by the -f test.
+paths=()
+while IFS= read -r p; do
+    abs="$HOME/$p"
+    if [ -f "$abs" ]; then
+        paths+=("$abs")
+    fi
+done < <("$CHEZMOI" managed)
+
+{
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+    printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+    printf '<plist version="1.0">\n'
+    printf '<dict>\n'
+    printf '  <key>Label</key>\n'
+    printf '  <string>com.truonghan.dotfiles-watcher</string>\n'
+    printf '  <key>ProgramArguments</key>\n'
+    printf '  <array>\n'
+    printf '    <string>%s</string>\n' "$TICK"
+    printf '  </array>\n'
+    printf '  <key>WatchPaths</key>\n'
+    printf '  <array>\n'
+    for p in "${paths[@]}"; do
+        esc=${p//&/&amp;}
+        esc=${esc//</&lt;}
+        esc=${esc//>/&gt;}
+        printf '    <string>%s</string>\n' "$esc"
+    done
+    printf '  </array>\n'
+    printf '  <key>ThrottleInterval</key>\n'
+    printf '  <integer>5</integer>\n'
+    printf '  <key>RunAtLoad</key>\n'
+    printf '  <false/>\n'
+    printf '  <key>StandardOutPath</key>\n'
+    printf '  <string>%s/dotfiles-watcher.log</string>\n' "$LOG_DIR"
+    printf '  <key>StandardErrorPath</key>\n'
+    printf '  <string>%s/dotfiles-watcher.log</string>\n' "$LOG_DIR"
+    printf '</dict>\n'
+    printf '</plist>\n'
+} > "$WATCHPLIST"
+
+info "wrote WatchPaths plist with ${#paths[@]} leaf paths"
+
+# ── Reload both LaunchAgents ───────────────────────────────────────
+# bootout is non-zero when the service isn't loaded; tolerate that. plutil
+# lint first so a malformed plist doesn't leave us with stale agents.
+reload_agent() {
+    local plist="$1"
+    local label
+    label=$(basename "$plist" .plist)
+
+    if [ ! -f "$plist" ]; then
+        warn "plist missing: $plist"
+        return 0
+    fi
+
+    if ! /usr/bin/plutil -lint "$plist" >/dev/null 2>&1; then
+        err "plist malformed: $plist" "Run: /usr/bin/plutil -lint $plist"
+        return 1
+    fi
+
+    launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+    if launchctl bootstrap "gui/$UID" "$plist" >/dev/null 2>&1; then
+        info "loaded: $label"
+    else
+        err "launchctl bootstrap failed: $label" \
+            "Inspect: launchctl print gui/$UID/$label"
+        return 1
+    fi
+}
+
+reload_agent "$WATCHPLIST"
+reload_agent "$FSWATCHPLIST"
+
+script_ok "watcher wired — edit a managed file, then 'dotfiles watch tail' to observe"

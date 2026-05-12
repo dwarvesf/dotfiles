@@ -1,0 +1,51 @@
+#!/bin/sh
+# ~/.local/bin/dotfiles-watcher-fswatch — long-lived fswatch wrapper for the
+# dotfiles watcher. Invoked by the LaunchAgent
+#   ~/Library/LaunchAgents/com.truonghan.dotfiles-watcher-fswatch.plist
+# with KeepAlive=true.
+#
+# Recursive coverage of the watched roots — catches edits inside subdirs that
+# launchd's WatchPaths cannot see (the hot case: editing
+# ~/.claude/skills/*/SKILL.md in place).
+
+set -eu
+
+FSWATCH="${DOTFILES_FSWATCH:-}"
+if [ -z "$FSWATCH" ] || [ ! -x "$FSWATCH" ]; then
+    FSWATCH=""
+    for p in /opt/homebrew/bin/fswatch /usr/local/bin/fswatch; do
+        [ -x "$p" ] && FSWATCH="$p" && break
+    done
+fi
+if [ -z "$FSWATCH" ]; then
+    echo "dotfiles-watcher-fswatch: fswatch not found on PATH" >&2
+    exit 1
+fi
+
+TICK="${HOME}/.local/bin/dotfiles-watcher-tick"
+if [ ! -x "$TICK" ]; then
+    echo "dotfiles-watcher-fswatch: $TICK not executable" >&2
+    exit 1
+fi
+
+# Build the list of roots that actually exist on this box.
+ROOTS=""
+for d in "${HOME}/.claude" "${HOME}/.config/zed" "${HOME}/.config/fish"; do
+    [ -d "$d" ] && ROOTS="${ROOTS} ${d}"
+done
+if [ -z "$ROOTS" ]; then
+    echo "dotfiles-watcher-fswatch: no watched roots exist; exiting" >&2
+    exit 0
+fi
+
+# -r:           recurse
+# -o:           bundle events into a single line per batch
+# --latency 1:  bundle events arriving within a 1-second window
+#
+# Each batched event triggers a backgrounded tick; mkdir-lock inside the tick
+# script ensures only one actually runs at a time. Spurious extra invocations
+# are cheap (lock check + immediate exit).
+# shellcheck disable=SC2086
+"$FSWATCH" -r -o --latency 1 $ROOTS | while IFS= read -r _; do
+    "$TICK" &
+done

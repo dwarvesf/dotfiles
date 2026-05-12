@@ -1559,12 +1559,100 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                     return 1
             end
 
+        case watch
+            # Background watcher that absorbs drifted managed files into the
+            # repo's working tree as soon as they're saved. Distinct from
+            # `/dotfiles-sync` (the broader Claude-driven workflow that also
+            # classifies new files, commits, and pushes); see S-64.
+            # WatchPaths agent fires on every managed file's mtime; fswatch
+            # agent gives recursive coverage of ~/.claude, ~/.config/zed,
+            # ~/.config/fish. Working-tree only: no auto-commit, no push.
+            set -l sub $argv[2]
+            set -l label_wp com.truonghan.dotfiles-watcher
+            set -l label_fs com.truonghan.dotfiles-watcher-fswatch
+            set -l plist_wp $HOME/Library/LaunchAgents/$label_wp.plist
+            set -l plist_fs $HOME/Library/LaunchAgents/$label_fs.plist
+            set -l log $HOME/Library/Logs/dotfiles-watcher.log
+            set -l tick $HOME/.local/bin/dotfiles-watcher-tick
+
+            switch $sub
+                case install
+                    # The run_onchange chezmoi script regenerates the WatchPaths
+                    # plist and bootstraps both agents; force a re-run by
+                    # touching the source so chezmoi sees a content change.
+                    set -l src (chezmoi source-path)
+                    set -l hook $src/.chezmoiscripts/run_onchange_after_dotfiles-watcher.sh.tmpl
+                    if test -f $hook
+                        touch $hook
+                    end
+                    chezmoi apply; or return 1
+                    echo "✓ installed. Inspect: dotfiles watch status"
+
+                case uninstall
+                    for label in $label_wp $label_fs
+                        if launchctl bootout "gui/$UID/$label" 2>/dev/null
+                            echo "✓ bootout: $label"
+                        else
+                            echo "  (not loaded: $label)"
+                        end
+                    end
+                    echo "Plists remain on disk; 'dotfiles watch install' re-enables."
+
+                case status
+                    for label in $label_wp $label_fs
+                        if launchctl print "gui/$UID/$label" >/dev/null 2>&1
+                            set -l state (launchctl print "gui/$UID/$label" 2>/dev/null \
+                                | string match -r 'state = .*' | head -1 \
+                                | string replace -r '^\s*state = ' '')
+                            test -z "$state"; and set state "loaded"
+                            echo "[ok]  $label — $state"
+                        else
+                            echo "[--]  $label — not loaded"
+                        end
+                    end
+
+                case now
+                    if test -x $tick
+                        $tick
+                        echo "✓ ran $tick (inspect: dotfiles watch tail)"
+                    else
+                        echo "✗ $tick not deployed; run 'chezmoi apply' first"
+                        return 1
+                    end
+
+                case tail
+                    if test -f $log
+                        tail -F $log
+                    else
+                        echo "(no log at $log — watcher hasn't run yet)"
+                        return 0
+                    end
+
+                case '' '-h' '--help'
+                    echo "Usage: dotfiles watch <install|uninstall|status|now|tail>"
+                    echo ""
+                    echo "  install     Load both watchers (WatchPaths + fswatch)"
+                    echo "  uninstall   Bootout both watchers (plists stay on disk)"
+                    echo "  status      Show whether each watcher is loaded"
+                    echo "  now         Run one watcher tick on demand"
+                    echo "  tail        tail -F the watcher log"
+                    echo ""
+                    echo "Watcher absorbs drift only (chezmoi re-add). For new packages,"
+                    echo "new skills, and commits, use the /dotfiles-sync skill instead."
+
+                case '*'
+                    echo "Unknown 'watch' subcommand: $sub"
+                    echo "Run 'dotfiles watch' for help."
+                    return 1
+            end
+
         case ''
             echo "Usage: dotfiles <command>"
             echo ""
             echo "Commands:"
             echo "  edit <file>       Edit + apply + auto-commit"
             echo "  drift             Detect and re-absorb drifted files"
+            echo "  watch <cmd>       Background watcher that absorbs drift (install/uninstall/status/now/tail) -- see S-64"
             echo "  secret <cmd>      Manage 1Password secrets (add/rm/list)"
             echo "  secret-guard <cmd> S-62 hook utilities (explain/test/log/mode/audit-transcripts/doctor)"
             echo "  local <cmd>       Manage machine-specific .local files (list/promote/demote/edit)"

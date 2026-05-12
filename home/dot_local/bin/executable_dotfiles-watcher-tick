@@ -1,0 +1,82 @@
+#!/bin/sh
+# ~/.local/bin/dotfiles-watcher-tick — one tick of the dotfiles watcher.
+# Absorbs config drift into the dotfiles repo's working tree by calling
+# `chezmoi re-add` on every drifted managed file. Triggered by:
+#   ~/Library/LaunchAgents/com.truonghan.dotfiles-watcher.plist          (launchd WatchPaths)
+#   ~/Library/LaunchAgents/com.truonghan.dotfiles-watcher-fswatch.plist  (fswatch -r daemon)
+#
+# Working-tree only: never commits, never pushes. Operator reviews via
+# `git status` in the dotfiles repo and commits manually.
+
+set -eu
+
+LOG="${HOME}/Library/Logs/dotfiles-watcher.log"
+LOCK="${HOME}/Library/Caches/dotfiles-watcher.lock"
+mkdir -p "$(dirname "$LOG")" "$(dirname "$LOCK")"
+
+# Atomic lock via mkdir (macOS doesn't ship /usr/bin/flock by default).
+# If another tick is already in flight, exit silently — its drift loop will
+# pick up our changes on its next pass. Stale locks from a previous crash
+# are forgiven after 60s.
+if [ -d "$LOCK" ]; then
+    lock_mtime=$(stat -f %m "$LOCK" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    age=$((now - lock_mtime))
+    if [ "$age" -lt 60 ]; then
+        exit 0
+    fi
+    rmdir "$LOCK" 2>/dev/null || true
+fi
+if ! mkdir "$LOCK" 2>/dev/null; then
+    exit 0
+fi
+trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+
+# Locate chezmoi. Test runners inject DOTFILES_CHEZMOI to point at a fake.
+CHEZMOI="${DOTFILES_CHEZMOI:-}"
+if [ -z "$CHEZMOI" ] || [ ! -x "$CHEZMOI" ]; then
+    CHEZMOI=""
+    for p in /opt/homebrew/bin/chezmoi /usr/local/bin/chezmoi "${HOME}/.local/bin/chezmoi"; do
+        [ -x "$p" ] && CHEZMOI="$p" && break
+    done
+fi
+if [ -z "$CHEZMOI" ]; then
+    printf '%s ERROR chezmoi not found on PATH\n' "$(date -u +%FT%TZ)" >> "$LOG"
+    exit 1
+fi
+
+# Drift loop: a file edited while a tick is mid-flight would be missed if we
+# only checked once. Loop up to N times until chezmoi status is clean.
+DRIFT_LOOP_MAX=3
+iter=0
+absorbed=0
+START_TS=$(date -u +%FT%TZ)
+
+while [ $iter -lt $DRIFT_LOOP_MAX ]; do
+    # Coalesce a burst of editor-save events into a single pass.
+    # Zed in particular writes settings.json 2-3 times within ~100ms.
+    sleep 2
+
+    DRIFT=$("$CHEZMOI" status 2>/dev/null | awk '/^ M / {print substr($0,4)}')
+    if [ -z "$DRIFT" ]; then
+        break
+    fi
+
+    if [ $iter -eq 0 ]; then
+        printf '%s TICK start\n' "$START_TS" >> "$LOG"
+    fi
+
+    echo "$DRIFT" | while IFS= read -r path; do
+        [ -z "$path" ] && continue
+        abs="${HOME}/${path}"
+        if "$CHEZMOI" re-add "$abs" >>"$LOG" 2>&1; then
+            printf '  + %s\n' "$path" >> "$LOG"
+        fi
+    done
+    absorbed=1
+    iter=$((iter + 1))
+done
+
+if [ $absorbed -eq 1 ]; then
+    printf '%s TICK done (passes=%d)\n' "$(date -u +%FT%TZ)" "$iter" >> "$LOG"
+fi

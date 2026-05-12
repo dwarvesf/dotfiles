@@ -308,6 +308,46 @@ dotfiles drift    # shows drifted files, prompts, re-absorbs into source, commit
   <img src="dotfiles_dfs_workflow.svg" alt="dfs workflow" width="680">
 </p>
 
+### The background watcher (S-64)
+
+`dotfiles drift` is the manual operator-pull path. `dotfiles watch` is the
+background-push counterpart: two LaunchAgents watch every managed file and
+absorb drift into the repo's working tree about 3 seconds after each save.
+No commit, no push -- you still review with `git status` and commit manually.
+
+It is **not** a replacement for `/dotfiles-sync`. The watcher only does the
+"absorb drift" slice; new packages, new skills, classifications, commits, and
+pushes still go through the `/dotfiles-sync` Claude skill. The watcher's job
+is to keep drift continuously empty so that when you do run `/dotfiles-sync`,
+the report focuses on the decisions only you can make, not on a backlog of
+mechanical re-absorption.
+
+```fish
+dotfiles watch install   # load both watchers (one-time)
+dotfiles watch status    # confirm both are running
+dotfiles watch tail      # tail -F the watcher log
+dotfiles watch now       # trigger an absorption pass on demand
+dotfiles watch uninstall # bootout (plists stay on disk)
+```
+
+Two watchers, complementary coverage:
+
+| Agent | How it fires | Strength |
+|---|---|---|
+| `com.truonghan.dotfiles-watcher` | launchd `WatchPaths` -- one leaf path per managed file, regenerated from `chezmoi managed` on every `chezmoi apply` | Native, zero processes, fires on direct mtime of any tracked file (including in-place `~/.claude/skills/*/SKILL.md` edits) |
+| `com.truonghan.dotfiles-watcher-fswatch` | `fswatch -r --latency 1` on `~/.claude`, `~/.config/zed`, `~/.config/fish`, KeepAlive=true | Recursive coverage including subdirs created since the last apply |
+
+Both pipe into `~/.local/bin/dotfiles-watcher-tick`, which atomically locks
+(mkdir), debounces 2s, and loops up to 3 passes of `chezmoi re-add` until
+status is clean. Concurrent invocations from event bursts collapse to a single
+tick.
+
+Not for: auto-commit (kept manual on purpose), auto-adding *new* untracked
+files (use `/dotfiles-sync` or `dotfiles add`), Linux (macOS LaunchAgents only).
+
+Full design: [S-64](specs/S-64-dotfiles-watch.md). Tests:
+`tests/dotfiles-watch.sh`.
+
 ### Changing a config: two paths
 
 <p align="center">
@@ -322,6 +362,7 @@ For everything beyond editing, use the `dotfiles` wrapper:
 |---------|-------|------|-------------|
 | `dotfiles edit <path>` | `e` | `de` | Edit + apply + auto-commit |
 | `dotfiles drift` | | `dd` | Detect and re-absorb drifted files |
+| `dotfiles watch <cmd>` | | | Background watcher that absorbs drift (install/uninstall/status/now/tail) -- see S-64 |
 | `dotfiles secret <cmd>` | | | Manage 1Password secrets (add/rm/list) |
 | `dotfiles diff` | `d` | | Show pending changes |
 | `dotfiles sync` | `s` | `ds` | Apply all changes |
