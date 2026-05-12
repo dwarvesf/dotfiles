@@ -297,10 +297,14 @@ fi
 section "12e. v3.5 -- MODE switch (warn-only / off)"
 
 # warn-only mode: same patterns, but exit 0 and print "WARN-ONLY" header.
+# Banner format is `============= WARN-ONLY: <short-label> =============`
+# where <short-label> is the per-rule label (e.g. "1Password value to
+# terminal" for B1). We only check for the WARN-ONLY prefix here; the
+# per-rule label check lives in tests 122/123 below.
 OUT=$(printf '%s' '{"session_id":"sg-mode","tool_name":"Bash","tool_input":{"command":"op read op://X/Y/z"}}' \
     | SECRET_GUARD_MODE=warn-only bash "$HOOK" 2>&1)
 RC=$?
-if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'WARN-ONLY: secret leak'; then
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q '=== WARN-ONLY:'; then
     PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS  120 v3.5 warn-only mode exits 0 with WARN-ONLY header"
 else
     FAIL_COUNT=$((FAIL_COUNT + 1)); FAILED_LABELS+=("120 warn-only mode")
@@ -318,10 +322,12 @@ else
     echo "FAIL  121 off mode (rc=$RC, OUT=$OUT)"
 fi
 
-# Per-rule guidance: B5 block message includes B5-specific recipe.
+# Per-rule guidance: B5 block message includes B5-specific recipe AND
+# the B5 short-label in the banner. Rule code (B5) is no longer in the
+# user-facing banner (it lives in the audit log only).
 OUT=$(printf '%s' '{"session_id":"sg-rule","tool_name":"Bash","tool_input":{"command":"cat ~/.netrc"}}' | bash "$HOOK" 2>&1)
 RC=$?
-if [ "$RC" -eq 2 ] && printf '%s' "$OUT" | grep -q 'S-62/B5' && printf '%s' "$OUT" | grep -q 'rendered secret values'; then
+if [ "$RC" -eq 2 ] && printf '%s' "$OUT" | grep -q 'BLOCKED: cat-class read of a secret file' && printf '%s' "$OUT" | grep -q 'rendered secret values'; then
     PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS  122 v3.5 B5 block message has B5-specific guidance"
 else
     FAIL_COUNT=$((FAIL_COUNT + 1)); FAILED_LABELS+=("122 B5 per-rule guidance")
@@ -331,7 +337,7 @@ fi
 # Per-rule guidance: B7 (literal credential in command).
 OUT=$(printf '%s' '{"session_id":"sg-rule","tool_name":"Bash","tool_input":{"command":"http POST https://x.example/auth Authorization:\"Bearer '"$FAKE_SK_ANT"'\""}}' | bash "$HOOK" 2>&1)
 RC=$?
-if [ "$RC" -eq 2 ] && printf '%s' "$OUT" | grep -q 'S-62/B7' && printf '%s' "$OUT" | grep -q "Replace the literal credential"; then
+if [ "$RC" -eq 2 ] && printf '%s' "$OUT" | grep -q 'BLOCKED: literal credential in command' && printf '%s' "$OUT" | grep -q "Replace the literal credential"; then
     PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS  123 v3.5 B7 block message has B7-specific guidance"
 else
     FAIL_COUNT=$((FAIL_COUNT + 1)); FAILED_LABELS+=("123 B7 per-rule guidance")
