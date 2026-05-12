@@ -10,3 +10,6 @@ tags
 !tags/
 tmp/**/*
 !tmp/cache/.keep
+
+# Claude Code per-session worktrees
+.claude/worktrees/

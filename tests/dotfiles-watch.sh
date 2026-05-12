@@ -217,10 +217,27 @@ test_lock_coalesces() {
     return 0
 }
 
+test_absorb_MM_status() {
+    # MM in chezmoi status means both source and destination changed since
+    # last apply. The watcher must still absorb (dest changed = live edit).
+    # Was a real bug found during S-64 deploy on Mac mini.
+    local home
+    home=$(mktemp -d)
+    _setup_fake_home "$home"
+    export FAKE_STATUS_LINES=$'MM .tool-versions'
+    _run_tick "$home" || { rm -rf "$home"; return 1; }
+    local log="$home/Library/Logs/dotfiles-watcher.log"
+    grep -q 'TICK start' "$log" || { echo "MM row not absorbed"; cat "$log"; rm -rf "$home"; return 1; }
+    grep -q '+ .tool-versions' "$log" || { echo "missing absorbed-file line"; cat "$log"; rm -rf "$home"; return 1; }
+    rm -rf "$home"
+    return 0
+}
+
 run "3.1 no-op when chezmoi status clean"   test_noop_when_clean
 run "3.2 absorb single-pass drift"          test_single_pass_absorb
 run "3.3 drift loop iterates until clean"   test_drift_loop_iterates
 run "3.4 mkdir-lock coalesces parallel"     test_lock_coalesces
+run "3.5 absorb MM (both-changed) row"      test_absorb_MM_status
 
 # ---------------------------------------------------------------
 # 5. Brewfile entry
