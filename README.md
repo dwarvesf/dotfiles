@@ -8,7 +8,7 @@
 ![1Password](https://img.shields.io/badge/1Password-Secrets-0572EC?logo=1password&logoColor=white)
 ![CI](https://img.shields.io/github/actions/workflow/status/dwarvesf/dotfiles/test.yml?label=CI&logo=github)
 
-**Multi-machine dotfiles maintained by an LLM.** You operate each Mac freely; Claude detects what drifted, asks whether new packages are shared across machines or specific to this one, and keeps everything in sync. **You don't need to sync this repo by hand** — there's a `dotfiles` CLI for offline edits, but day-to-day you just talk to Claude.
+**Multi-machine dotfiles maintained by an LLM.** You operate each Mac freely; Claude detects what drifted, asks whether new packages are shared across machines or specific to this one, and keeps everything in sync. **You don't need to sync this repo by hand** — there's a `dotfiles` CLI for offline edits, but day-to-day you just talk to Claude. An optional background watcher ([S-64](docs/specs/S-64-dotfiles-watch.md)) absorbs config drift into the working tree within ~3s of each save, so `/dotfiles-sync` sessions focus on classification and commits rather than wading through mechanical drift.
 
 ## The idea
 
@@ -51,7 +51,7 @@ The pattern is general and works with any dotfiles manager and any LLM agent. Th
   <img src="docs/dotfiles_llm_sync_workflow.svg" alt="LLM sync workflow: machine drifts, Claude syncs" width="680">
 </p>
 
-[chezmoi](https://www.chezmoi.io/) is the backbone. It separates the source (repo) from the target ($HOME), renders templates with injected secrets, and provides drift detection via `chezmoi status`. This two-layer model is what makes LLM-maintained sync possible: the LLM can safely scan, diff, and re-add without touching secrets in git.
+[chezmoi](https://www.chezmoi.io/) is the backbone. It separates the source (repo) from the target ($HOME), renders templates with injected secrets, and provides drift detection via `chezmoi status`. This two-layer model is what makes LLM-maintained sync possible: the LLM can safely scan, diff, and re-add without touching secrets in git. The optional [S-64 watcher](docs/specs/S-64-dotfiles-watch.md) runs `chezmoi re-add` for you in the background whenever a managed file changes; opt in with `dotfiles watch install`.
 
 The `/dotfiles-sync` command is installed to `~/.claude/commands/` during setup, so it's available in Claude Code from any directory. The command prompt (at [.claude/commands/dotfiles-sync.md](.claude/commands/dotfiles-sync.md)) teaches Claude what to scan:
 
@@ -101,6 +101,7 @@ After install, you never edit this repo by hand. Open Claude Code anywhere and s
 | What you want | What to say |
 |---|---|
 | Catch up after drift | `/dotfiles-sync` |
+| Absorb drift automatically as you save | `dotfiles watch install` (one-time setup; opt-in, [S-64](docs/specs/S-64-dotfiles-watch.md)) |
 | Add a shared tool | *"Add ripgrep to dotfiles, shared across machines"* |
 | Add a tool just for this Mac | *"Install chrysalis but local to this Mac"* |
 | Promote local → core | *"Promote raycast from local to core"* |
@@ -153,6 +154,8 @@ When you're not in a Claude session (SSH, airplane, quick edit), the `dotfiles` 
 ```fish
 dotfiles edit ~/.config/fish/config.fish   # edit + apply + auto-commit
 dotfiles drift                              # detect and re-absorb drift
+dotfiles watch install                      # opt in to background drift absorption (S-64)
+dotfiles watch status                       # is the watcher running?
 dotfiles local list                         # show machine-specific overrides
 dotfiles local promote cask <name>          # move from local to core
 dotfiles secret list                        # show secrets + Keychain cache status

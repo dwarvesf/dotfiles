@@ -547,6 +547,7 @@ if command -v gum &>/dev/null; then
     printf '\033[38;5;10m    2.\033[38;5;%sm Sign into 1Password:  \033[38;5;%smop signin\033[0m\n' "$WIZ_DIM" "$WIZ_ACCENT"
     printf '\033[38;5;10m    3.\033[38;5;%sm Enable SSH agent: 1Password > Settings > Developer\033[0m\n' "$WIZ_DIM"
     printf '\033[38;5;10m    4.\033[38;5;%sm Run: \033[38;5;%smdotfiles doctor\033[0m\n' "$WIZ_DIM" "$WIZ_ACCENT"
+    printf '\033[38;5;10m    5.\033[38;5;%sm Optional: \033[38;5;%smdotfiles watch install\033[0m\033[38;5;%sm  (S-64 background drift absorber)\033[0m\n' "$WIZ_DIM" "$WIZ_ACCENT" "$WIZ_DIM"
     echo ""
 else
     echo "==> Done!"
@@ -562,4 +563,5 @@ else
     echo "  2. Sign into 1Password:  op signin"
     echo "  3. Enable 1Password SSH agent: 1Password > Settings > Developer > SSH Agent"
     echo "  4. Run: dotfiles doctor"
+    echo "  5. Optional: dotfiles watch install   (S-64 background drift absorber)"
 fi

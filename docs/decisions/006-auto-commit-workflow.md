@@ -86,3 +86,15 @@ Together, `dotfiles edit` and `dotfiles drift` cover both directions. The workfl
 - The `--no-commit` flag is the escape hatch for all helpers when you need to batch changes or are experimenting.
 - `dotfiles drift` requires user confirmation before re-absorbing drift. It will never silently overwrite source files.
 - The workflow assumes you're working in a git repo. If the dotfiles source isn't a git repo (unlikely but possible), the commit step is silently skipped.
+
+## Exception: the S-64 background watcher (2026-05-12)
+
+[S-64](../specs/S-64-dotfiles-watch.md) ships a pair of LaunchAgents that absorb drift into the repo's working tree continuously, without committing. This is a **deliberate, explicit exception** to the commit-on-change rule above. The Alternatives-considered section originally rejected an "fswatch / file watcher daemon" on two grounds: it would be too aggressive (auto-applying source-to-machine on every save) and could die silently. S-64 sidesteps both concerns by reversing the direction (machine-to-source absorption only, never source-to-machine apply) and by being opt-in (`dotfiles watch install`).
+
+Why the watcher does not auto-commit even though every other helper does:
+
+- **No human authored the edit.** The commit-on-change rule exists to close the "I edited and forgot to commit" gap. A watcher-triggered absorb wasn't authored by anyone; it just mirrors what the system noticed. Auto-committing it would turn the commit log into a noise-stream of mechanical mirrors.
+- **The review gate has to live somewhere.** With `dotfiles edit`, the human is at the keyboard and can see what's happening; auto-commit is fine. With the watcher, the human isn't watching — `git status` review before `git commit` is the only step where they can catch an accidental edit, secret leak, or scratch file.
+- **Public repo.** A leaked secret committed by a daemon is harder to discover and revert than one committed by an interactive helper.
+
+So the watcher absorbs to the working tree and stops. `dotfiles drift` and `dotfiles edit` continue to auto-commit by default; the watcher is the one exception, scoped to the new "absorb continuously, review before commit" use case introduced in S-64.

@@ -273,9 +273,21 @@ secrets, all in one pass. No separate workflows per category.
 
 **The repo is the persistent artifact.** It compounds over time. Every sync makes it more accurate.
 
-**No daemon, no watcher.** You trigger the sync when you want it. This
-is intentional: dotfiles sync should be a conscious decision, not
-background automation.
+**The Claude-driven sync stays a conscious decision.** You run
+`/dotfiles-sync` when *you* want a review session — new packages
+classified, new skills filed, commits made, push approved. The LLM
+never decides on its own to commit or push.
+
+**Drift absorption can still happen in the background** (added in
+[S-64](specs/S-64-dotfiles-watch.md), 2026-05). Two LaunchAgents watch
+every managed file and absorb live edits into the repo's working tree
+within ~3 seconds, but they never commit. The watcher is one slice of
+what `/dotfiles-sync` does (the mechanical "absorb drift" slice),
+running automatically. Empty drift sections in your next sync report
+become the norm, and the report focuses on the decisions only a human
+can make (classification, commits, pushes) instead of clicking through
+forty re-adds. Opt-in via `dotfiles watch install`. See `docs/guide.md`
+§ 4 "The background watcher" for the operator surface.
 
 ## Setting it up
 
