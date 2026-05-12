@@ -6,6 +6,46 @@ context.
 
 ---
 
+## [2026-05-12] S-64 watcher ship + regex fix @ Mac mini
+
+First deploy of the S-64 continuous-watcher feature on the Mac mini
+(branch `feat/dotfiles-watcher` merged via dwarvesf/dotfiles#98 the same
+day). Scope used to avoid clobbering a `.claude/settings.json` MM conflict:
+`chezmoi apply ~/.local/bin/dotfiles-watcher-{tick,fswatch}`
+`~/Library/LaunchAgents/com.truonghan.dotfiles-watcher-fswatch.plist`
+`~/.Brewfile ~/.gitignore ~/.config/fish/functions/dotfiles.fish` then
+`chezmoi apply --exclude=files` to fire the `run_onchange` wiring without
+touching the conflicted settings.json. brew-bundle installed `fswatch`
+along the way. WatchPaths plist generated with 120 leaves; both
+LaunchAgents bootstrapped (`com.truonghan.dotfiles-watcher` state=idle,
+`com.truonghan.dotfiles-watcher-fswatch` state=running pid 5578).
+
+End-to-end demo on `~/.tool-versions`: live append fired the watcher,
+log got `TICK start` + `+ .tool-versions` + `TICK done (passes=3)`,
+`git diff home/dot_tool-versions` showed the line absorbed; sed-revert
+fired another tick that returned source to HEAD.
+
+**Regex bug found during deploy.** Original `dotfiles-watcher-tick`
+matched drift via `awk '/^ M /'` (dest-only modified, source untouched).
+On the Mac mini, the live edit produced `MM .tool-versions` in
+`chezmoi status` (both-flagged), which `^ M ` does not match -- the tick
+exited silently. Widened to `awk '/^.M /'` so any "destination modified"
+row (` M `, `MM `, `AM `) absorbs. Added test case 3.5
+`absorb_MM_status` to `tests/dotfiles-watch.sh`; full suite 10/10 green.
+
+Drift absorbed:
+  - `home/dot_gitignore` -- `.claude/worktrees/` lines re-added (pre-existing
+    drift, not introduced this session).
+
+Known issue surfaced this session (now documented in S-64 § Known issues):
+  - `.claude/settings.json` is `MM` because a `modify_` script renders it;
+    `chezmoi re-add` succeeds but doesn't change source, so each tick
+    logs an absorb attempt that's a no-op. `DRIFT_LOOP_MAX=3` keeps it
+    bounded. Long-term fix: detect "re-add was a no-op" and stop
+    retrying for that file in the same tick.
+
+---
+
 ## [2026-05-11] sync @ Hans Air M4
 
 Claude skills (core):

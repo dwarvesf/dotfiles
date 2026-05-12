@@ -57,7 +57,11 @@ while [ $iter -lt $DRIFT_LOOP_MAX ]; do
     # Zed in particular writes settings.json 2-3 times within ~100ms.
     sleep 2
 
-    DRIFT=$("$CHEZMOI" status 2>/dev/null | awk '/^ M / {print substr($0,4)}')
+    # Match any "destination modified" row (chezmoi status format: SD where
+    # D=destination). ` M `, `MM `, and `AM ` all mean the dest has drifted
+    # and `chezmoi re-add` is the right action. ` A ` (new file untracked-by-chezmoi)
+    # is intentionally skipped per S-64 § Out of scope.
+    DRIFT=$("$CHEZMOI" status 2>/dev/null | awk '/^.M / {print substr($0,4)}')
     if [ -z "$DRIFT" ]; then
         break
     fi
