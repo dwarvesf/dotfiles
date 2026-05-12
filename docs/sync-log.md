@@ -6,6 +6,29 @@ context.
 
 ---
 
+## [2026-05-13] S-66 watcher health audit ship @ Mac-mini
+
+Shipped the post-S-64 follow-up identified earlier in the same session: `/dotfiles-sync` now audits S-64 watcher health.
+
+What landed:
+- `home/dot_local/bin/executable_dotfiles-watch-doctor` — POSIX sh, six checks (both LaunchAgents `state = running`, plist fingerprint matches `chezmoi managed | sha256sum`, lock absent or <60s, `fswatch --version` works, log mtime within 30d, headless self-skip). Each non-`[ok]` line carries an inline `Fix: <cmd>` suffix.
+- `home/.chezmoiscripts/run_onchange_after_dotfiles-watcher.sh.tmpl` — writes `$HOME/.cache/dotfiles-watcher.managed.sha256` as a side effect so the doctor has something to diff against. No plist surgery needed.
+- `home/dot_config/fish/functions/dotfiles.fish` — new `case doctor` branch + `doctor` row in help text.
+- `home/dot_claude/commands/dotfiles-sync.md` — new "Watcher health (notify-only)" subsection between Secret cache and SA token rotation; shells out to `fish -l -c 'dotfiles watch doctor'`, grep-filters `^\[(warn|err)\]`, silent on healthy machines.
+- `tests/dotfiles-watch.sh` § 4 — 8 new cases (fake `launchctl` + fake `fswatch` + extended fake `chezmoi data` shim driven by `FAKE_LC_WP` / `FAKE_LC_FS` / `FAKE_HEADLESS` / `NOW_OVERRIDE`); suite now 26/26 (up from 17).
+- `docs/specs/S-66-dotfiles-sync-watcher-audit.md` — spec drafted, status flipped to `done`, DoD all ticked.
+
+End-to-end verification on this Mac mini:
+1. `~/.local/bin/dotfiles-watch-doctor` → six `[ok]` lines, exit 0.
+2. `launchctl bootout gui/$UID/com.truonghan.dotfiles-watcher-fswatch` → doctor surfaces `[err] agent: com.truonghan.dotfiles-watcher-fswatch not loaded — Fix: dotfiles watch install`, exit 1.
+3. `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.truonghan.dotfiles-watcher-fswatch.plist` → silent again, exit 0.
+
+Notable: secret-guard caught an early test sentinel using `deadbeef...` (64 hex chars = sha256-shaped, looks like a private key). Swapped to `stale-fingerprint-non-hex-sentinel` so the test value can never collide with a real hash. Validates that the hook trips even on test fixtures that *look* secret-shaped.
+
+Verifier: shellcheck (3 scripts), fish -n (1 file), chezmoi execute-template + bash -n on the wiring template, full suite 26/26 pass.
+
+---
+
 ## [2026-05-12] S-65 doc sweep @ Mac mini
 
 Post-ship doc cleanup driven by S-64. Five files touched to lock the

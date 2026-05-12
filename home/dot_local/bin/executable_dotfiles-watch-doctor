@@ -1,0 +1,131 @@
+#!/bin/sh
+# ~/.local/bin/dotfiles-watch-doctor — operational audit for the S-64 watcher.
+#
+# Exits 0 when every check is [ok]; non-zero when any [warn] or [err] fires.
+# Output is one line per check, prefixed [ok] / [warn] / [err]. Failing lines
+# carry an inline "Fix: <cmd>" suffix so the operator can remediate without
+# cross-referencing the spec.
+#
+# The sync-skill audit (/dotfiles-sync, S-66) calls this and grep-filters
+# to non-[ok] lines so a healthy machine is silent. Headless boxes self-
+# skip with a single [ok] line.
+#
+# Test runners can override:
+#   DOTFILES_CHEZMOI    path to a fake chezmoi (managed/data subcommands)
+#   PATH                inject a fake launchctl / fswatch directory
+#   HOME                isolated home for plist / lock / log lookups
+#   NOW_OVERRIDE        epoch seconds for deterministic age math
+
+set -u
+
+HAD_ISSUE=0
+ok()   { printf '[ok]    %s\n'             "$1"; }
+warn() { printf '[warn]  %s — Fix: %s\n'   "$1" "$2"; HAD_ISSUE=1; }
+err()  { printf '[err]   %s — Fix: %s\n'   "$1" "$2"; HAD_ISSUE=1; }
+
+now() { [ -n "${NOW_OVERRIDE:-}" ] && echo "$NOW_OVERRIDE" || date +%s; }
+
+UID_=$(id -u)
+LABEL_WP="com.truonghan.dotfiles-watcher"
+LABEL_FS="com.truonghan.dotfiles-watcher-fswatch"
+
+# ── Locate chezmoi ────────────────────────────────────────────────
+CHEZMOI="${DOTFILES_CHEZMOI:-}"
+if [ -z "$CHEZMOI" ] || [ ! -x "$CHEZMOI" ]; then
+    CHEZMOI=""
+    for p in /opt/homebrew/bin/chezmoi /usr/local/bin/chezmoi "${HOME}/.local/bin/chezmoi"; do
+        [ -x "$p" ] && CHEZMOI="$p" && break
+    done
+fi
+
+# ── Headless skip ─────────────────────────────────────────────────
+# `chezmoi data` emits JSON with the rendered template variables. We grep
+# for "headless": true to avoid a jq dep.
+if [ -n "$CHEZMOI" ]; then
+    if "$CHEZMOI" data 2>/dev/null | grep -qE '"headless"[[:space:]]*:[[:space:]]*true'; then
+        ok "watcher: headless box, audit skipped"
+        exit 0
+    fi
+fi
+
+# ── 1. Agent liveness ─────────────────────────────────────────────
+check_agent() {
+    label="$1"
+    out=$(launchctl print "gui/$UID_/$label" 2>/dev/null) || {
+        err "agent: $label not loaded" "dotfiles watch install"
+        return
+    }
+    state=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*state = //p' | head -1 | tr -d ' ')
+    if [ "$state" = "running" ]; then
+        ok "agent: $label running"
+    else
+        err "agent: $label loaded but state=${state:-unknown}" "dotfiles watch install"
+    fi
+}
+check_agent "$LABEL_WP"
+check_agent "$LABEL_FS"
+
+# ── 2. Plist fingerprint matches chezmoi managed ──────────────────
+FP_FILE="$HOME/.cache/dotfiles-watcher.managed.sha256"
+if [ -z "$CHEZMOI" ]; then
+    warn "plist fingerprint: chezmoi not on PATH" "install chezmoi"
+elif [ ! -f "$FP_FILE" ]; then
+    warn "plist fingerprint: no cache at $FP_FILE" "dotfiles watch install"
+else
+    actual=$("$CHEZMOI" managed 2>/dev/null | sha256sum | awk '{print $1}')
+    stored=$(cat "$FP_FILE" 2>/dev/null)
+    if [ "$actual" = "$stored" ] && [ -n "$actual" ]; then
+        ok "plist fingerprint: in sync with chezmoi managed"
+    else
+        warn "plist fingerprint: managed-set drifted since last wiring" \
+             "dotfiles watch install"
+    fi
+fi
+
+# ── 3. Lock not stale ─────────────────────────────────────────────
+LOCK="$HOME/Library/Caches/dotfiles-watcher.lock"
+if [ -d "$LOCK" ]; then
+    lock_mtime=$(stat -f %m "$LOCK" 2>/dev/null || echo 0)
+    age=$(( $(now) - lock_mtime ))
+    if [ "$age" -lt 60 ]; then
+        ok "lock: held by active tick (age ${age}s)"
+    else
+        warn "lock: stale (${age}s old)" "rm -rf $LOCK"
+    fi
+else
+    ok "lock: absent"
+fi
+
+# ── 4. fswatch binary present and working ─────────────────────────
+if command -v fswatch >/dev/null 2>&1; then
+    if fswatch --version >/dev/null 2>&1; then
+        ok "fswatch: $(command -v fswatch)"
+    else
+        err "fswatch: present but --version failed" "brew reinstall fswatch"
+    fi
+else
+    err "fswatch: missing" "brew install fswatch  (or: chezmoi apply)"
+fi
+
+# ── 5. Log warm enough ────────────────────────────────────────────
+# Empty log == steady state (watcher only writes on real drift). Missing
+# log == watcher hasn't run yet, also fine. Existing-but-old (>30d) log
+# on a non-headless machine where the operator is actively editing is the
+# soft signal we care about.
+LOG="$HOME/Library/Logs/dotfiles-watcher.log"
+if [ ! -f "$LOG" ]; then
+    ok "log: not yet created (no drift since install)"
+elif [ ! -s "$LOG" ]; then
+    ok "log: empty (steady state)"
+else
+    mtime=$(stat -f %m "$LOG" 2>/dev/null || echo 0)
+    age=$(( $(now) - mtime ))
+    days=$(( age / 86400 ))
+    if [ "$age" -lt 2592000 ]; then
+        ok "log: last write ${days}d ago"
+    else
+        warn "log: last write ${days}d ago" "dotfiles watch now"
+    fi
+fi
+
+exit "$HAD_ISSUE"
