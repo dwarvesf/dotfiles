@@ -23,7 +23,7 @@ Search, browse, and download books from Anna's Archive via the **member fast-dow
 ## Hard rules
 
 1. **Never hardcode the secret key.** Always resolve from 1Password at runtime. The skill uses `op run --env-file <tempfile>` (the `secret-guard` hook blocks raw `op read` even in nested contexts). The Python CLI reads `ANNAS_SECRET_KEY` from env; the skill is responsible for setting it for the subprocess only.
-2. **Default base URL is `https://annas-archive.gl`** (current primary as of 2026-05-10). The CLI has mirror fallback; if the user reports the primary has rotated, update `DEFAULT_BASE` in `annas_fetch.py` or pass `ANNAS_BASE_URL`.
+2. **Default base URL is `https://annas-archive.gl`** (current primary as of 2026-05-10). The CLI iterates `MIRRORS` on transport failure, then auto-discovers replacements via Wikipedia (then Anna's blog) when every mirror in the effective list dies in one invocation. Discovery result is cached at `~/.cache/annas-fetch/mirrors.json` (30-day TTL). Manual edits to `DEFAULT_BASE` / `ANNAS_BASE_URL` are still supported but rarely needed; for a forced refresh run `annas-fetch mirror-discover --force`. See Spec 08.
 3. **Default output is `~/Downloads/annas/`.** Never write into a consumer repo. Books are not repo content.
 4. **Confirm before downloading >3 files in one session.** Member tier daily quota is ~75 fast-downloads; bulk runs burn it fast.
 5. **Surface the quota line.** When the CLI prints `# quota: ...` to stderr, relay `downloads_left / downloads_per_day` to the user.
@@ -124,6 +124,7 @@ Report to the user:
 | "build the local library index" | `annas-fetch library scan --path ~/Downloads/annas` — walks recursively, hashes books, writes `~/.cache/annas-fetch/library.jsonl`. Add `--full` to rebuild from scratch. |
 | "do I already have <md5>?" | `annas-fetch library check <md5>` — exits 0 + path on hit, 1 on miss, 3 if no index |
 | "are the AA mirrors alive?" / "is .gl down?" | `annas-fetch mirror-check` — probes every entry in `MIRRORS` with HEAD, prints latency table. Add `--json` for structured output. |
+| "AA rotated all domains, find the new one" / "refresh the mirror list" | `annas-fetch mirror-discover [--force] [--json]` — scrapes the Anna's Archive Wikipedia page (then the blog) for current domains, writes `~/.cache/annas-fetch/mirrors.json`. Lazy auto-fallback already fires inside search/fetch on full failure; this verb is for explicit/manual refresh. |
 | "AA's HTML changed, parser tests broken" | `annas-fetch dev refresh-fixtures` — re-pulls `tests/fixtures/*.html`. Run unit tests after to surface drift. Dev-only. |
 
 None of these require the member key (only `fetch` does).
@@ -131,7 +132,7 @@ None of these require the member key (only `fetch` does).
 ### Step 6: Failure handling
 
 - **`download_url` missing across all 9 attempts** → API may have shifted field names. Inspect one raw response: `op run --env-file /tmp/annas.env -- python3 -c "import sys; sys.path.insert(0, '/Users/tieubao/workspace/tieubao/ops-toolkit/tools/annas-fetch'); from annas_fetch import fast_download_url; import json; print(json.dumps(fast_download_url('<md5>'), indent=2))"`. Patch the field name in the CLI.
-- **All mirrors fail at transport** → run `annas-fetch mirror-check` first to confirm which mirrors are alive. If `.gl` rotated out, update `DEFAULT_BASE` in `annas_fetch.py` or set `ANNAS_BASE_URL`.
+- **All mirrors fail at transport** → the CLI now auto-recovers by scraping Wikipedia (then Anna's blog) for the current domain list. If even that fails (rare: Wikipedia and the blog would both have to be unreachable), run `annas-fetch mirror-check` to confirm baseline reachability and `annas-fetch mirror-discover --force --json` to inspect the discovery payload. Last-resort overrides are still `DEFAULT_BASE` or `ANNAS_BASE_URL`.
 - **Quota exceeded** → tell the user; do not retry.
 - **Captcha / Cloudflare challenge in response** → member API should bypass these; if hit, the key may be invalid or expired. Verify the 1Password ref.
 - **Search results look like garbage / empty** → AA HTML markup may have shifted. Run `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` — if parser tests still pass against fixtures but live results are broken, refresh fixtures with `annas-fetch dev refresh-fixtures` and re-run tests to surface what changed.
@@ -147,7 +148,7 @@ None of these require the member key (only `fetch` does).
 
 - Tool source: `~/workspace/tieubao/ops-toolkit/tools/annas-fetch/`
 - Spec: `ops-toolkit/tools/annas-fetch/SPEC.md`
-- Follow-up specs: `ops-toolkit/tools/annas-fetch/specs/` (filters, hybrid browse, library dedup, quota tracker, mirror-check, fixture refresh; spec 05 parallel-probe is deferred)
-- Tests: `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` (no network, 91 cases) plus `RUN_LIVE_SMOKE=1 python3 tests/smoke_live.py` (5 cases, network, no fetch)
+- Follow-up specs: `ops-toolkit/tools/annas-fetch/specs/` (filters, hybrid browse, library dedup, quota tracker, mirror-check, fixture refresh, mirror auto-discovery; spec 05 parallel-probe is deferred)
+- Tests: `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` (no network, 119 cases) plus `RUN_LIVE_SMOKE=1 python3 tests/smoke_live.py` (6 cases, network, no fetch)
 - API: `GET /dyn/api/fast_download.json?md5=<hash>&key=<member_key>&path_index=<0..2>&domain_index=<0..2>` → JSON `{download_url, account_fast_download_info, ...}` or `{error, ...}`
-- Cache: `~/.cache/annas-fetch/` holds `quota.jsonl` (per-fetch row) and `library.jsonl` (built by `library scan`).
+- Cache: `~/.cache/annas-fetch/` holds `quota.jsonl` (per-fetch row), `library.jsonl` (built by `library scan`), and `mirrors.json` (auto-discovered mirror list, 30-day TTL).

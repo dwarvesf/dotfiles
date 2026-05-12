@@ -36,6 +36,7 @@ For **PDF in vault** (`_vault/legal/...`) the user references by path: that's fi
 
 - CLI: `~/workspace/tieubao/ops-toolkit/tools/local-ocr/local_ocr.py`
 - Endpoint: `http://100.118.23.42:11434` (the Mini's personal Tailnet identity; do NOT use `mac-mini-danang:11434` — that's the work-tagged identity and Ollama is bound to the personal one only)
+- Override with the `OLLAMA_HOST_URL` env var when you're off-Tailnet or testing against a different box. Scheme is required (e.g. `http://192.0.2.1:11434`).
 - Health check: `local-ocr health`
 
 If `local-ocr health` fails, surface the error to the user. Do not retry blindly. Common causes: Mini offline, Tailscale down, agent unloaded (`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/mini.ollama.plist`), models pruned (`ollama list` on Mini).
@@ -98,8 +99,9 @@ The CLI emits `doc_class:` as the first field of the YAML. Route based on it. Ea
 | `imaging` | `health/<person>.md` → `## Imaging / procedures` (one line: date, modality, body part, plain-language finding, vault path) | `_vault/legal/notes.md` (accession_number, full radiology narrative) | `_vault/legal/imaging-<person>-<modality>-<study-date>.pdf` |
 | `discharge` | `health/<person>.md` → `## Encounters` (new dated block) | `_vault/legal/notes.md` (patient_id, full discharge narrative, meds at discharge) | `_vault/legal/discharge-<person>-<discharge-date>.pdf` |
 | `vaccination` | `health/<person>.md` → `## Vaccinations` (flip Status: due → done for each matching dose; add row if no scheduled match exists) | `_vault/legal/notes.md` (patient_id if present) | `_vault/legal/vax-<person>-<latest-dose-date>.pdf` |
-| `portrait` | (no text fields to land) | (no notes; file itself is the artifact) | `_vault/legal/portrait-<person>-<date>.jpg` |
 | `other` | (manual review only; do not auto-write) | (manual review only) | `_vault/legal/<original-name>` (preserve original filename) |
+
+**Note on `portrait`**: the `structured` CLI does NOT emit `doc_class: portrait` — it's not in the `--doc-class` choices and has no schema. Portraits are recognized only by `triage` (see Other subcommands below), which routes them to `_vault/legal/portrait-<person>-<date>.<ext>` without any field extraction. If a user drops a portrait into Mode B, the CLI will classify it as `other` and you'll fall through to the manual-review row.
 
 ### When `doc_class: other` is returned
 
@@ -184,6 +186,19 @@ For DeepSeek with bounding boxes + region tags (visual audit trail):
 ```
 
 Useful when DeepSeek's output looks suspicious or the user wants a second opinion before committing field values.
+
+### Other subcommands (housekeeping)
+
+These verbs sit alongside `ocr` / `structured` / `compare` / `absorb` / `rollback`. Use them when the user's intent matches.
+
+| User intent | Subcommand | Notes |
+|---|---|---|
+| "what's in this folder?" / "triage the inbox" / "what doc class is this?" | `local-ocr triage <dir-or-file> [--format json]` | Filename + extension heuristics only. No content reads, so it's safe to run against an `_inbox/` you haven't reviewed yet. Returns one row per file with sensitivity score + suggested doc-class hint (the hint set is broader than `structured`'s `--doc-class` choices: it recognises `portrait`, `bao-hiem-y-te`, `vaccine`, etc. as routing aliases). |
+| "double-check this YAML for PII leaks" / "re-verify the extraction" | `local-ocr verify <yaml-file>` (or `-` for stdin) | Runs Presidio over the YAML and flags `safe_for_git` fields that look like PII. Same threshold as Mode B's blocking gate (0.7). Useful if a user hand-edited an extraction and you want a sanity pass before they commit. |
+| "show me past blind-absorb runs" / "what did I absorb last week?" | `local-ocr audit list` | Lists every run in `_vault/audit/blind-absorb/`, newest first, redacted. |
+| "show me run X's manifest" / "what files did blind-absorb touch on RUN-Y?" | `local-ocr audit show <run-id> [--format json]` | Prints the manifest for one run. Redacted by default. **Never invoke with `--full`** — the CLI's own help string warns "DANGER: reads .values.json and prints extracted field values. Do NOT use from an LLM session; only in your own terminal." That's the same load-bearing invariant as Mode D's no-read rule. |
+
+None of these need the member-tier model or the 1Password key; they're local-only metadata/filename operations.
 
 ## Output format and human review
 
