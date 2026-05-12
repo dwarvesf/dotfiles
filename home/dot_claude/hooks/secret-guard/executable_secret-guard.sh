@@ -137,8 +137,32 @@ block() {
     log_event "BLOCK" "[$rule] $reason"
     local label="BLOCKED"
     [ "$MODE" = "warn-only" ] && label="WARN-ONLY"
+    # Short, human-readable headline per rule for the banner. The
+    # rule code (B3, B6, ...) still gets logged in audit for grep
+    # but no longer appears in the user-facing banner.
+    local short
+    case "$rule" in
+    B1)   short="1Password value to terminal" ;;
+    B2)   short="secret-cache-read to terminal" ;;
+    B2b)  short="keychain password to terminal" ;;
+    B2c)  short="gh auth token to terminal" ;;
+    B2d)  short="decrypted plaintext to terminal" ;;
+    B3)   short="echo of a secret variable" ;;
+    B3.5) short="here-string with a secret" ;;
+    B4a)  short="bare env / printenv / set dump" ;;
+    B4b)  short="printenv of a secret variable" ;;
+    B4c)  short="declare/typeset/export -p exposes secret" ;;
+    B5)   short="cat-class read of a secret file" ;;
+    B6)   short="heredoc body expands a secret variable" ;;
+    B7)   short="literal credential in command" ;;
+    B8)   short="interpreter reads a secret env var" ;;
+    R1)   short="Read of a secret-bearing file" ;;
+    W1 | W2) short="literal credential in Edit/Write" ;;
+    *)    short="secret leak" ;;
+    esac
     {
-        echo "============= ${label}: secret leak (S-62/${rule}) ============="
+        echo
+        echo "============= ${label}: ${short} ============="
         echo "$reason"
         echo
         case "$rule" in
@@ -401,6 +425,76 @@ is_safe_secret_call() {
     return 0
 }
 
+# split_quote_aware SEP
+# Read CMD on stdin, write to stdout with `;`, `&&`, `||` (when OUTSIDE
+# single/double quotes) replaced by SEP. Lets callers split a command
+# into logical segments without breaking on `;`/`&&` inside quoted
+# strings (e.g. `python -c "import os; print(os.environ['X'])" > /tmp/x`
+# keeps the redirect attached to the python call, not separated).
+split_quote_aware() {
+    awk -v sep="$1" '
+    { buf = buf (NR > 1 ? "\n" : "") $0 }
+    END {
+        in_s = 0; in_d = 0
+        out = ""; i = 1; n = length(buf)
+        while (i <= n) {
+            c = substr(buf, i, 1)
+            c2 = substr(buf, i, 2)
+            if (in_s) {
+                if (c == "\047") in_s = 0
+                out = out c; i++
+            } else if (in_d) {
+                if (c == "\\" && i < n) {
+                    out = out c substr(buf, i+1, 1); i += 2; continue
+                }
+                if (c == "\"") in_d = 0
+                out = out c; i++
+            } else {
+                if (c == "\047") { in_s = 1; out = out c; i++ }
+                else if (c == "\"") { in_d = 1; out = out c; i++ }
+                else if (c2 == "&&" || c2 == "||") { out = out sep; i += 2 }
+                else if (c == ";") { out = out sep; i++ }
+                else { out = out c; i++ }
+            }
+        }
+        printf "%s", out
+    }'
+}
+
+# extract_unquoted_heredoc_bodies
+# Read CMD on stdin, emit ONLY the body lines of heredocs whose marker
+# is UNQUOTED (`<<EOF`, `<<-EOF`). Quoted-marker bodies (`<<'EOF'`,
+# `<<"EOF"`) preserve the body literally with no shell expansion, so
+# any $VAR in their bodies is not a leak vector and we skip them. Used
+# by B6 to check whether a secret-bearing variable is actually
+# expanded into a heredoc body, rather than the prior flat-grep that
+# fired on any unquoted heredoc + any secret-deref anywhere in CMD.
+extract_unquoted_heredoc_bodies() {
+    awk '
+    BEGIN { in_hd = 0; marker = ""; dash_flag = 0; quoted = 0 }
+    {
+        if (in_hd) {
+            check = $0
+            if (dash_flag) sub(/^[[:space:]]+/, "", check)
+            if (check == marker) { in_hd = 0; next }
+            if (!quoted) print
+            next
+        }
+        if (match($0, /<<-?[\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {
+            tok = substr($0, RSTART, RLENGTH)
+            dash_flag = (substr(tok, 3, 1) == "-")
+            mtok = tok
+            sub(/^<</, "", mtok)
+            sub(/^-/, "", mtok)
+            quoted = (mtok ~ /^[\047"]/)
+            sub(/^[\047"]/, "", mtok)
+            sub(/[\047"]$/, "", mtok)
+            marker = mtok
+            in_hd = 1
+        }
+    }'
+}
+
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty')
 
 # Variable names (no $ prefix) we treat as secret-bearing.
@@ -409,10 +503,23 @@ SECRET_NAME_RE='\b(CLOUDFLARE_API_TOKEN|R2_SECRET_ACCESS_KEY|OP_SERVICE_ACCOUNT_
 SECRET_DEREF_RE='\$\{?'"$SECRET_NAME_RE"
 
 # Files whose content is a resolved secret on a configured machine.
-# Notes on the SSH-key pattern: `/\.ssh/id_NAME([[:space:]]|;|\||>|<|$)`
-# matches `id_ed25519` followed by a separator that is NOT `.`, so the
-# corresponding `id_ed25519.pub` (public key, safe) does NOT match.
-SECRET_FILES_BASH_RE='/conf\.d/secrets\.fish(\b|$)|/\.netrc(\b|$)|/\.aws/credentials(\b|$)|/\.config/op/[^[:space:]]+|\.local/[^[:space:]]*\.(env|secrets|tokens)\b|/\.ssh/id_[a-zA-Z0-9_-]+([[:space:]]|;|\||>|<|$)|/\.kube/config(\b|$)|/\.docker/config\.json(\b|$)|/\.npmrc(\b|$)|/\.pypirc(\b|$)|/\.cargo/credentials(\b|$)|/\.gem/credentials(\b|$)|/\.git-credentials(\b|$)|/\.config/gh/hosts\.yml(\b|$)|/\.config/gcloud/application_default_credentials\.json(\b|$)|\.(pem|p12|pfx)(\b|$)'
+# Terminator class deliberately excludes `.` so `.netrc.tmpl`, `.aws/
+# credentials.tmpl` and other template-with-op-refs do NOT match the
+# secret-file pattern. Word boundary `\b` matched `.` (word/non-word
+# transition) and caused a class of false positives; switching to an
+# explicit separator class fixes that AND keeps the SSH-key behavior
+# (`id_ed25519.pub` non-match) uniform across all path entries.
+#
+# Bare `.pem` deliberately NOT included. The format is used for both
+# private keys and public certs; without a path heuristic we'd flag
+# every `/etc/ssl/certs/*.pem` read. Canonical private-key directories
+# (`/etc/ssl/private/`, `/etc/pki/tls/private/`) are explicitly listed
+# so a `.pem` under them still blocks. Other private keys land in
+# `~/.ssh/id_*` (caught) or under user-managed paths (bypass marker if
+# you really need to cat them). `.p12` and `.pfx` are almost always
+# private and stay.
+SEPCLASS='([[:space:]]|;|&|\||>|<|$)'
+SECRET_FILES_BASH_RE="/conf\.d/secrets\.fish${SEPCLASS}|/\.netrc${SEPCLASS}|/\.aws/credentials${SEPCLASS}|/\.config/op/[^[:space:]]+|\.local/[^[:space:]]*\.(env|secrets|tokens)${SEPCLASS}|/\.ssh/id_[a-zA-Z0-9_-]+${SEPCLASS}|/\.kube/config${SEPCLASS}|/\.docker/config\.json${SEPCLASS}|/\.npmrc${SEPCLASS}|/\.pypirc${SEPCLASS}|/\.cargo/credentials${SEPCLASS}|/\.gem/credentials${SEPCLASS}|/\.git-credentials${SEPCLASS}|/\.config/gh/hosts\.yml${SEPCLASS}|/\.config/gcloud/application_default_credentials\.json${SEPCLASS}|/etc/ssl/private/[^[:space:]]+|/etc/pki/tls/private/[^[:space:]]+|\.(p12|pfx)${SEPCLASS}"
 
 case "$TOOL" in
 Bash)
@@ -461,15 +568,79 @@ Bash)
     #     `openssl rsautl -decrypt`, `openssl pkeyutl -decrypt` all
     #     write plaintext to stdout. Treat plaintext as secret by
     #     default; same terminal-aware rule applies.
-    DECRYPT_RE='gpg[[:space:]]+(-d|--decrypt)|openssl[[:space:]]+(enc[[:space:]]+[^|]*-d|rsautl[[:space:]]+[^|]*-decrypt|pkeyutl[[:space:]]+[^|]*-decrypt)'
+    #
+    #     Each flag carries a terminator (whitespace or end-of-string)
+    #     so that:
+    #       gpg --decrypt-files foo.gpg   # writes to .out, NOT stdout
+    #       openssl enc -des-cbc ...      # encrypting WITH des cipher
+    #     do not substring-match on `--decrypt` / `-d`. `-d` in openssl
+    #     enc is further required to be preceded by whitespace so it
+    #     anchors to an actual flag boundary, not a substring of
+    #     `-aes-128-cbc` style cipher names.
+    DECRYPT_RE='gpg[[:space:]]+(-d([[:space:]]|$)|--decrypt([[:space:]]|$))|openssl[[:space:]]+(enc[[:space:]]+([^|]*[[:space:]])?-d([[:space:]]|$)|rsautl[[:space:]]+([^|]*[[:space:]])?-decrypt([[:space:]]|$)|pkeyutl[[:space:]]+([^|]*[[:space:]])?-decrypt([[:space:]]|$))'
     if printf '%s' "$CMD" | grep -qE "(^|[^a-zA-Z_/-])${DECRYPT_RE}"; then
         if ! is_safe_secret_call "$CMD" "$DECRYPT_RE"; then
             block "decryption command would write plaintext to the transcript." "B2d"
         fi
     fi
 
-    # 3. echo|printf|print|cat-heredoc that emits a secret-named var.
-    if printf '%s' "$CMD" | grep -qE "(^|[^a-zA-Z_/-])(echo|printf|print)[[:space:]][^|]*${SECRET_DEREF_RE}"; then
+    # 3. echo|printf|print that emits a secret-named var to stdout.
+    #    Capture-form-aware: $() and `` captures are stripped FIRST
+    #    (their stdout is captured into the surrounding string and
+    #    never reaches the terminal), and quoted-marker heredoc bodies
+    #    are stripped too (literal, no expansion). Then segment-aware:
+    #    split on `;`/`&&`/`||` (quote-aware) and check each segment
+    #    in isolation. Previously the regex used `[^|]*` to span from
+    #    the print-verb to the secret-deref, which matched across `&&`
+    #    boundaries and on print-verbs inside `$(...)` captures.
+    #
+    #    Still NOT terminal-aware for redirect (`echo $TOKEN > file`
+    #    blocks even though no transcript leak), per the original
+    #    design intent: an echo of $TOKEN is suspicious enough to flag
+    #    regardless of sink. The bypass marker is the escape hatch.
+    b3_stripped=$(printf '%s' "$CMD" | awk '
+    BEGIN { in_hd = 0; marker = ""; dash_flag = 0 }
+    {
+        if (in_hd) {
+            check = $0
+            if (dash_flag) sub(/^[[:space:]]+/, "", check)
+            if (check == marker) in_hd = 0
+            next
+        }
+        if (match($0, /<<-?[\047"][A-Za-z_][A-Za-z0-9_]*[\047"]/)) {
+            tok = substr($0, RSTART, RLENGTH)
+            dash_flag = (substr(tok, 3, 1) == "-")
+            mtok = tok
+            sub(/^<</, "", mtok)
+            sub(/^-/, "", mtok)
+            sub(/^[\047"]/, "", mtok)
+            sub(/[\047"]$/, "", mtok)
+            marker = mtok
+            in_hd = 1
+        }
+        print
+    }')
+    while [[ "$b3_stripped" =~ \$\([^\(\)]*\) ]]; do
+        b3_stripped="${b3_stripped/"${BASH_REMATCH[0]}"/}"
+    done
+    while [[ "$b3_stripped" =~ \`[^\`]*\` ]]; do
+        b3_stripped="${b3_stripped/"${BASH_REMATCH[0]}"/}"
+    done
+    b3_sep=$'\034'
+    b3_marked=$(printf '%s' "$b3_stripped" | split_quote_aware "$b3_sep")
+    b3_unsafe=0
+    b3_oldifs="$IFS"
+    IFS="$b3_sep"
+    # shellcheck disable=SC2206  # intentional word split on sentinel
+    b3_segments=( $b3_marked )
+    IFS="$b3_oldifs"
+    for b3_seg in "${b3_segments[@]}"; do
+        if printf '%s' "$b3_seg" | grep -qE "(^|[^a-zA-Z_/-])(echo|printf|print)[[:space:]][^|]*${SECRET_DEREF_RE}"; then
+            b3_unsafe=1
+            break
+        fi
+    done
+    if [ "$b3_unsafe" = "1" ]; then
         block "command would print a secret-bearing variable to stdout" "B3"
     fi
     if printf '%s' "$CMD" | grep -qE "<<<[[:space:]]*[\"']?[^\"']*${SECRET_DEREF_RE}"; then
@@ -504,21 +675,47 @@ Bash)
         fi
     fi
 
-    # 5. Reading rendered secret files via cat/bat/head/tail/less/more/xxd/hexdump.
-    if printf '%s' "$CMD" | grep -qE "(^|[^a-zA-Z_/-])(cat|bat|head|tail|less|more|xxd|hexdump)[[:space:]][^|]*(${SECRET_FILES_BASH_RE})"; then
+    # 5. Reading rendered secret-bearing files via cat-class viewers.
+    #    Segment-aware so that
+    #      cat /tmp/safe.txt && less ~/.aws/credentials
+    #    doesn't false-fire (the cat is in one segment, the secret-path
+    #    in another); the prior `[^|]*` regex spanned across `&&`
+    #    boundaries from the cat-verb to a downstream path. Same shape
+    #    of bug as the original B3 / B6.
+    b5_sep=$'\034'
+    b5_marked=$(printf '%s' "$CMD" | split_quote_aware "$b5_sep")
+    b5_unsafe=0
+    b5_oldifs="$IFS"
+    IFS="$b5_sep"
+    # shellcheck disable=SC2206  # intentional word split on sentinel
+    b5_segments=( $b5_marked )
+    IFS="$b5_oldifs"
+    for b5_seg in "${b5_segments[@]}"; do
+        if printf '%s' "$b5_seg" | grep -qE "(^|[^a-zA-Z_/-])(cat|bat|head|tail|less|more|xxd|hexdump)[[:space:]][^|]*(${SECRET_FILES_BASH_RE})"; then
+            b5_unsafe=1
+            break
+        fi
+    done
+    if [ "$b5_unsafe" = "1" ]; then
         block "command would print a known secret-bearing file" "B5"
     fi
 
     # 6. Heredoc body that expands a secret-named variable. Heredocs
     #    with an UNQUOTED marker perform variable expansion (`<<EOF`,
     #    `<<-EOF`); markers wrapped in single or double quotes
-    #    (`<<'EOF'`, `<<"EOF"`) preserve the body literally. So we only
-    #    block when the marker is unquoted AND the command contains a
-    #    secret-deref. (Rule B3 already catches the here-string `<<<`.)
-    if printf '%s' "$CMD" | grep -qE '(^|[^<])<<-?[[:space:]]*[A-Za-z_]'; then
-        if printf '%s' "$CMD" | grep -qE "${SECRET_DEREF_RE}"; then
-            block "heredoc with unquoted marker would expand a secret-bearing variable into its body" "B6"
-        fi
+    #    (`<<'EOF'`, `<<"EOF"`) preserve the body literally and are
+    #    skipped. Extract ONLY the unquoted-marker bodies via the awk
+    #    helper, then grep that extract for SECRET_DEREF_RE. Prior
+    #    impl flat-grep'd both predicates against the whole CMD, which
+    #    false-fired on the common pattern
+    #      cat > /tmp/x <<JSON ... no-secrets ... JSON
+    #      curl -H "Bearer $CF_API_TOKEN" ... --data @/tmp/x
+    #    where the safe `-H` curl is outside any heredoc.
+    #    (Rule B3 already catches the here-string `<<<`.)
+    HEREDOC_BODIES=$(printf '%s' "$CMD" | extract_unquoted_heredoc_bodies)
+    if [ -n "$HEREDOC_BODIES" ] && \
+        printf '%s' "$HEREDOC_BODIES" | grep -qE "${SECRET_DEREF_RE}"; then
+        block "heredoc with unquoted marker would expand a secret-bearing variable into its body" "B6"
     fi
 
     # 7. Literal credential value embedded in the command itself. The
@@ -549,12 +746,32 @@ Bash)
     #    `python -c "print(os.environ['X'])" > /tmp/out` is allowed.
     INTERPRETER_RE='(python[23]?|node|deno|ruby|perl)[[:space:]]+(-c|-e)[[:space:]]'
     INTERPRETER_ENV_ACCESS_RE='(os\.environ|process\.env|ENV\[|\$ENV\{)'
-    if printf '%s' "$CMD" | grep -qE "(^|[^a-zA-Z_/-])${INTERPRETER_RE}" \
-        && printf '%s' "$CMD" | grep -qE "$INTERPRETER_ENV_ACCESS_RE" \
-        && printf '%s' "$CMD" | grep -qE "$SECRET_NAME_RE"; then
-        if ! is_safe_secret_call "$CMD" "$INTERPRETER_RE"; then
-            block "interpreter -c/-e script reads a secret-bearing env var; its output would land in the transcript" "B8"
+    # Three signals must coexist IN THE SAME SEGMENT, not just somewhere
+    # in CMD. Prior flat-grep aggregation false-fired on
+    #   python3 -c "import os; print(os.environ['HOME'])" \
+    #     && curl -H "Bearer $CLOUDFLARE_API_TOKEN" ...
+    # where the interpreter is in segment 1 (reads HOME, not a secret)
+    # and the secret-name is in segment 2 (inside a safe-pattern curl).
+    b8_sep=$'\034'
+    b8_marked=$(printf '%s' "$CMD" | split_quote_aware "$b8_sep")
+    b8_unsafe=0
+    b8_oldifs="$IFS"
+    IFS="$b8_sep"
+    # shellcheck disable=SC2206  # intentional word split on sentinel
+    b8_segments=( $b8_marked )
+    IFS="$b8_oldifs"
+    for b8_seg in "${b8_segments[@]}"; do
+        if printf '%s' "$b8_seg" | grep -qE "(^|[^a-zA-Z_/-])${INTERPRETER_RE}" \
+            && printf '%s' "$b8_seg" | grep -qE "$INTERPRETER_ENV_ACCESS_RE" \
+            && printf '%s' "$b8_seg" | grep -qE "$SECRET_NAME_RE"; then
+            if ! is_safe_secret_call "$b8_seg" "$INTERPRETER_RE"; then
+                b8_unsafe=1
+                break
+            fi
         fi
+    done
+    if [ "$b8_unsafe" = "1" ]; then
+        block "interpreter -c/-e script reads a secret-bearing env var; its output would land in the transcript" "B8"
     fi
     ;;
 
@@ -565,6 +782,13 @@ Read)
     # explicit allow, so the broader id_* glob below doesn't catch
     # them. `*-cert.pub` is a subset of `*.pub` and needs no extra
     # case (covered by the first arm).
+    #
+    # Bare `*.pem` NOT listed (covers both private keys and public
+    # certs; the public-cert case `/etc/ssl/certs/*.pem` was a regular
+    # false positive). Canonical private-key dirs `/etc/ssl/private/`
+    # and `/etc/pki/tls/private/` are listed explicitly so reads under
+    # them still block. True SSH private keys are caught by
+    # `*/.ssh/id_*`. `*.p12` / `*.pfx` are kept (almost always private).
     case "$P" in
     */.ssh/*.pub) ;;
     */conf.d/secrets.fish \
@@ -580,7 +804,8 @@ Read)
         | */.git-credentials \
         | */.config/gh/hosts.yml \
         | */.config/gcloud/application_default_credentials.json \
-        | *.pem | *.p12 | *.pfx)
+        | */etc/ssl/private/* | */etc/pki/tls/private/* \
+        | *.p12 | *.pfx)
         block "Read tool target is a known secret-bearing path: $P" "R1"
         ;;
     esac
