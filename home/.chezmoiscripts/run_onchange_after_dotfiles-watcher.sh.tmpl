@@ -87,6 +87,15 @@ done < <("$CHEZMOI" managed)
 
 info "wrote WatchPaths plist with ${#paths[@]} leaf paths"
 
+# ── Cache the managed-set fingerprint for `dotfiles watch doctor` (S-66) ─
+# The doctor diffs this against a live `chezmoi managed | sha256sum` to
+# detect when the WatchPaths plist has drifted from the managed set
+# (i.e. new managed files were added but the run_onchange did not re-fire).
+FP_DIR="$HOME/.cache"
+FP_FILE="$FP_DIR/dotfiles-watcher.managed.sha256"
+mkdir -p "$FP_DIR"
+"$CHEZMOI" managed | sha256sum | awk '{print $1}' > "$FP_FILE"
+
 # ── Reload both LaunchAgents ───────────────────────────────────────
 # bootout is non-zero when the service isn't loaded; tolerate that. plutil
 # lint first so a malformed plist doesn't leave us with stale agents.

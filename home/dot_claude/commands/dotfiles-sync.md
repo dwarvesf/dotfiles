@@ -243,6 +243,20 @@ if command -v op >/dev/null 2>&1 && op account list &>/dev/null; then
 fi
 ```
 
+### Watcher health (notify-only)
+```bash
+# S-66: surface any [warn]/[err] line from `dotfiles watch doctor`. Silent
+# on healthy machines (all [ok] lines filtered out). The doctor itself
+# self-skips on headless and embeds an inline "Fix: <cmd>" suffix on every
+# non-ok line so the report stays scannable. Notify-only by design: per
+# S-64 philosophy the operator runs the fix, never the sync.
+if command -v dotfiles >/dev/null 2>&1; then
+    fish -l -c 'dotfiles watch doctor' 2>/dev/null \
+      | grep -E '^\[(warn|err)\]' \
+      || true
+fi
+```
+
 ### SA token rotation (notify-only)
 ```bash
 # If the bearer in this shell's env is from a service account that's been

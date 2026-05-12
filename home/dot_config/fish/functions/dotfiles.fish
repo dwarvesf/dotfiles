@@ -1628,12 +1628,22 @@ function dotfiles -d "Manage dotfiles via chezmoi"
                         return 0
                     end
 
+                case doctor
+                    set -l doctor $HOME/.local/bin/dotfiles-watch-doctor
+                    if test -x $doctor
+                        $doctor
+                    else
+                        echo "✗ $doctor not deployed; run 'chezmoi apply' first"
+                        return 1
+                    end
+
                 case '' '-h' '--help'
-                    echo "Usage: dotfiles watch <install|uninstall|status|now|tail>"
+                    echo "Usage: dotfiles watch <install|uninstall|status|doctor|now|tail>"
                     echo ""
                     echo "  install     Load both watchers (WatchPaths + fswatch)"
                     echo "  uninstall   Bootout both watchers (plists stay on disk)"
                     echo "  status      Show whether each watcher is loaded"
+                    echo "  doctor      Audit watcher health (S-66: agents/plist/lock/fswatch/log)"
                     echo "  now         Run one watcher tick on demand"
                     echo "  tail        tail -F the watcher log"
                     echo ""

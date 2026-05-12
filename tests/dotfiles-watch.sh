@@ -15,9 +15,11 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TICK="$REPO_ROOT/home/dot_local/bin/executable_dotfiles-watcher-tick"
 FSWATCH_WRAP="$REPO_ROOT/home/dot_local/bin/executable_dotfiles-watcher-fswatch"
+DOCTOR="$REPO_ROOT/home/dot_local/bin/executable_dotfiles-watch-doctor"
 FSWATCH_PLIST_TMPL="$REPO_ROOT/home/Library/LaunchAgents/com.truonghan.dotfiles-watcher-fswatch.plist.tmpl"
 WIRE_TMPL="$REPO_ROOT/home/.chezmoiscripts/run_onchange_after_dotfiles-watcher.sh.tmpl"
 BREWFILE_TMPL="$REPO_ROOT/home/dot_Brewfile.tmpl"
+SYNC_SKILL="$REPO_ROOT/home/dot_claude/commands/dotfiles-sync.md"
 
 VERBOSE=0
 [ "${1:-}" = "--verbose" ] && VERBOSE=1
@@ -66,6 +68,11 @@ case "${1:-}" in
         [ -n "${FAKE_MANAGED:-}" ] && printf '%s\n' "$FAKE_MANAGED"
         exit 0
         ;;
+    data)
+        # S-66 doctor probes `chezmoi data` for headless. Default false.
+        printf '{"headless": %s}\n' "${FAKE_HEADLESS:-false}"
+        exit 0
+        ;;
     status)
         iter=0
         [ -f "$state/iter" ] && iter=$(cat "$state/iter")
@@ -109,8 +116,12 @@ test_shellcheck_tick() {
 test_shellcheck_fswatch() {
     shellcheck -e SC2015 "$FSWATCH_WRAP"
 }
+test_shellcheck_doctor() {
+    shellcheck -e SC2015 "$DOCTOR"
+}
 run "1.1 shellcheck dotfiles-watcher-tick"     test_shellcheck_tick
 run "1.2 shellcheck dotfiles-watcher-fswatch"  test_shellcheck_fswatch
+run "1.3 shellcheck dotfiles-watch-doctor"     test_shellcheck_doctor
 
 # ---------------------------------------------------------------
 # 2. Templates render and lint
@@ -238,6 +249,232 @@ run "3.2 absorb single-pass drift"          test_single_pass_absorb
 run "3.3 drift loop iterates until clean"   test_drift_loop_iterates
 run "3.4 mkdir-lock coalesces parallel"     test_lock_coalesces
 run "3.5 absorb MM (both-changed) row"      test_absorb_MM_status
+
+# ---------------------------------------------------------------
+# 4. dotfiles-watch-doctor (S-66 health audit)
+# ---------------------------------------------------------------
+section "4. Doctor (S-66)"
+
+# Helper: write a fake launchctl. Behavior driven by env vars
+#   FAKE_LC_WP=running|loaded|missing
+#   FAKE_LC_FS=running|loaded|missing
+_make_fake_launchctl() {
+    local bin="$1"
+    cat > "$bin/launchctl" <<'SHIM'
+#!/bin/sh
+target="$2"
+case "$target" in
+    *com.truonghan.dotfiles-watcher-fswatch) flag="${FAKE_LC_FS:-running}";;
+    *com.truonghan.dotfiles-watcher)         flag="${FAKE_LC_WP:-running}";;
+    *)                                       exit 1;;
+esac
+case "$flag" in
+    running) echo "	state = running"; exit 0;;
+    loaded)  echo "	state = waiting"; exit 0;;
+    missing) exit 1;;
+esac
+exit 1
+SHIM
+    chmod +x "$bin/launchctl"
+}
+
+# Helper: write a fake fswatch shim (test 4.5 deletes it to simulate missing).
+_make_fake_fswatch() {
+    local bin="$1"
+    cat > "$bin/fswatch" <<'SHIM'
+#!/bin/sh
+[ "$1" = "--version" ] && { echo "fswatch 1.18.0 (fake)"; exit 0; }
+exit 0
+SHIM
+    chmod +x "$bin/fswatch"
+}
+
+_setup_doctor_home() {
+    local home="$1"
+    mkdir -p "$home/.local/bin" "$home/.cache" \
+             "$home/Library/Logs" "$home/Library/Caches" \
+             "$home/Library/LaunchAgents" "$home/.shims"
+    _make_fake_chezmoi "$home/.local/bin"
+    _make_fake_launchctl "$home/.shims"
+    _make_fake_fswatch "$home/.shims"
+}
+
+_seed_clean_fingerprint() {
+    local home="$1"
+    printf '' | sha256sum | awk '{print $1}' \
+        > "$home/.cache/dotfiles-watcher.managed.sha256"
+}
+
+_run_doctor() {
+    local home="$1"
+    HOME="$home" \
+    PATH="$home/.shims:$home/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    DOTFILES_CHEZMOI="$home/.local/bin/chezmoi" \
+        sh "$DOCTOR"
+}
+
+test_doctor_clean() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    _seed_clean_fingerprint "$home"
+    out=$(FAKE_MANAGED="" FAKE_LC_WP=running FAKE_LC_FS=running _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "expected exit 0, got $rc"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if echo "$out" | grep -qE '^\[(warn|err)\]'; then
+        echo "unexpected warn/err on clean state:"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_doctor_agent_wp_missing() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    _seed_clean_fingerprint "$home"
+    out=$(FAKE_MANAGED="" FAKE_LC_WP=missing FAKE_LC_FS=running _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "expected non-zero exit, got 0"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[err\][[:space:]]+agent: com.truonghan.dotfiles-watcher not loaded'; then
+        echo "missing [err] line for agent-wp"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_doctor_plist_drift() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    # Non-hex sentinel so secret-guard doesn't see it as a 64-hex private key.
+    echo "stale-fingerprint-non-hex-sentinel" \
+        > "$home/.cache/dotfiles-watcher.managed.sha256"
+    out=$(FAKE_MANAGED=".claude/CLAUDE.md
+.config/zed/settings.json" \
+          FAKE_LC_WP=running FAKE_LC_FS=running _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "expected non-zero exit, got 0"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[warn\][[:space:]]+plist fingerprint: managed-set drifted'; then
+        echo "missing [warn] for plist fingerprint drift"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_doctor_lock_stale() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    _seed_clean_fingerprint "$home"
+    mkdir -p "$home/Library/Caches/dotfiles-watcher.lock"
+    local lock_mtime
+    lock_mtime=$(stat -f %m "$home/Library/Caches/dotfiles-watcher.lock")
+    out=$(FAKE_MANAGED="" FAKE_LC_WP=running FAKE_LC_FS=running \
+          NOW_OVERRIDE=$((lock_mtime + 3600)) _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "expected non-zero exit, got 0"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[warn\][[:space:]]+lock: stale'; then
+        echo "missing [warn] for stale lock"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_doctor_fswatch_missing() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    _seed_clean_fingerprint "$home"
+    rm -f "$home/.shims/fswatch"
+    out=$(FAKE_MANAGED="" FAKE_LC_WP=running FAKE_LC_FS=running _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "expected non-zero exit, got 0"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[err\][[:space:]]+fswatch: missing'; then
+        echo "missing [err] for fswatch missing"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_doctor_headless_skip() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    out=$(FAKE_HEADLESS=true _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "headless should exit 0, got $rc"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[ok\][[:space:]]+watcher: headless'; then
+        echo "missing [ok] headless line"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_sync_skill_calls_doctor() {
+    grep -F "dotfiles watch doctor" "$SYNC_SKILL" >/dev/null
+}
+
+test_wiring_script_writes_fingerprint() {
+    grep -F "dotfiles-watcher.managed.sha256" "$WIRE_TMPL" >/dev/null
+}
+
+run "4.1 doctor exits 0 on a clean machine"          test_doctor_clean
+run "4.2 doctor errs when WatchPaths agent missing"  test_doctor_agent_wp_missing
+run "4.3 doctor warns on plist fingerprint drift"    test_doctor_plist_drift
+run "4.4 doctor warns on stale lock (>60s)"          test_doctor_lock_stale
+run "4.5 doctor errs when fswatch binary missing"    test_doctor_fswatch_missing
+run "4.6 doctor self-skips on headless"              test_doctor_headless_skip
+run "4.7 /dotfiles-sync skill invokes doctor"        test_sync_skill_calls_doctor
+run "4.8 wiring script caches managed fingerprint"   test_wiring_script_writes_fingerprint
 
 # ---------------------------------------------------------------
 # 5. Brewfile entry
