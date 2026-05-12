@@ -250,6 +250,50 @@ test_brewfile_has_fswatch() {
 run "5.1 home/dot_Brewfile.tmpl contains fswatch" test_brewfile_has_fswatch
 
 # ---------------------------------------------------------------
+# 6. Docs cross-references (S-65 post-ship sweep)
+# ---------------------------------------------------------------
+section "6. Docs cross-references (S-65)"
+
+LLM_DOTFILES="$REPO_ROOT/docs/llm-dotfiles.md"
+README="$REPO_ROOT/README.md"
+INSTALL_SH="$REPO_ROOT/install.sh"
+SYNC_SKILL="$REPO_ROOT/home/dot_claude/commands/dotfiles-sync.md"
+ADR_006="$REPO_ROOT/docs/decisions/006-auto-commit-workflow.md"
+
+test_no_stale_no_daemon_claim() {
+    # The pre-S-64 sentence "No daemon, no watcher" was actively wrong post-ship.
+    # Must not reappear.
+    ! grep -F "No daemon, no watcher" "$LLM_DOTFILES"
+}
+test_llm_dotfiles_mentions_watcher() {
+    grep -F "dotfiles watch" "$LLM_DOTFILES" >/dev/null && grep -F "S-64" "$LLM_DOTFILES" >/dev/null
+}
+test_readme_cheat_sheet_has_watcher() {
+    grep -F "dotfiles watch" "$README" >/dev/null
+}
+test_readme_cross_references_s64() {
+    grep -F "S-64" "$README" >/dev/null
+}
+test_install_sh_mentions_watcher() {
+    grep -F "dotfiles watch" "$INSTALL_SH" >/dev/null
+}
+test_sync_skill_acknowledges_watcher() {
+    grep -F "dotfiles watch" "$SYNC_SKILL" >/dev/null
+}
+test_adr_006_has_watcher_exception() {
+    # Either a "S-64" cross-reference or "exception" framing around the watcher.
+    grep -E "S-64|watcher.*exception|exception.*watcher" "$ADR_006" >/dev/null
+}
+
+run "6.1 docs/llm-dotfiles.md no stale 'No daemon, no watcher'"  test_no_stale_no_daemon_claim
+run "6.2 docs/llm-dotfiles.md mentions watcher + S-64"           test_llm_dotfiles_mentions_watcher
+run "6.3 README cheat sheet has watcher row"                     test_readme_cheat_sheet_has_watcher
+run "6.4 README cross-references S-64"                           test_readme_cross_references_s64
+run "6.5 install.sh hints at the watcher"                        test_install_sh_mentions_watcher
+run "6.6 /dotfiles-sync skill Step 2 acknowledges watcher"       test_sync_skill_acknowledges_watcher
+run "6.7 ADR-006 documents the watcher exception"                test_adr_006_has_watcher_exception
+
+# ---------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------
 printf '\n=====================================\n'

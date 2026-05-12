@@ -8,6 +8,8 @@ Read `docs/sync-log.md` to understand when the last sync happened and what chang
 
 ## Step 2: Scan for drift
 
+**Note on the S-64 watcher.** If `dotfiles watch` is installed and running on this machine (check with `launchctl print "gui/$UID/com.truonghan.dotfiles-watcher" >/dev/null 2>&1 && echo yes`), config drift on already-managed files gets absorbed into the working tree continuously, within ~3s of each save. The Drift section of your report will usually be empty or near-empty on these machines — that's the expected steady state, **not** a signal that the scan is broken. New files (untracked-by-chezmoi) still surface here because the watcher only acts on managed paths. When the Drift section is empty, focus the report on classification (new packages, new skills, SSH fragments) and commit decisions.
+
 Run these detection commands in parallel where possible:
 
 ### Config drift

@@ -6,6 +6,39 @@ context.
 
 ---
 
+## [2026-05-12] S-65 doc sweep @ Mac mini
+
+Post-ship doc cleanup driven by S-64. Five files touched to lock the
+post-state in tests:
+
+- `docs/llm-dotfiles.md` -- replaced "No daemon, no watcher" passage (now
+  actively wrong) with a section explaining the watcher's complement to
+  `/dotfiles-sync`.
+- `README.md` -- pitch sentence acknowledging the watcher; cheat-sheet
+  row for `dotfiles watch install`; two-layer model section
+  cross-references S-64.
+- `install.sh` -- step 5 "Optional: dotfiles watch install" in both
+  gum-styled and plain-fallback Next steps blocks.
+- `home/dot_claude/commands/dotfiles-sync.md` -- "Note on the S-64
+  watcher" paragraph at the top of Step 2 setting the expectation that
+  empty Drift sections are now the steady state.
+- `docs/decisions/006-auto-commit-workflow.md` -- new "Exception" section
+  explaining why the watcher deliberately breaks the commit-on-change
+  default (no human authored the edit -> review gate has to live
+  somewhere -> public repo means daemon commits are higher-risk).
+
+New section 6 in `tests/dotfiles-watch.sh` (7 grep cases) locks the
+post-state. Full suite 17/17.
+
+**Re-bit by [[zed-clobbers-claude-edits]].** First-pass Edits to
+`install.sh` and the `/dotfiles-sync` skill landed on disk but were
+clobbered ~immediately by stale Zed buffers re-saving. Caught by the
+section-6 grep tests failing on first run; re-applied with immediate
+post-edit `grep` verification. Memory pattern stays correct: verify
+`git diff` before `git add` whenever Zed has files open.
+
+---
+
 ## [2026-05-12] S-64 watcher ship + regex fix @ Mac mini
 
 First deploy of the S-64 continuous-watcher feature on the Mac mini
