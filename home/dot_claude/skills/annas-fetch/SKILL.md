@@ -47,17 +47,19 @@ python3 ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/annas_fetch.py \
   search "<query>" --ext <epub|pdf|...> --limit 10
 ```
 
-No key needed for search. Default `--sort popularity` ranks by `mirror_count + format_quality + 0.5*recency + edition_bonus`. Output columns: `MD5  SCORE  EXT  YEAR  Nm  e<N>  TITLE` (`Nm` = mirror count; `e<N>` only shown when explicit edition > 1).
+No key needed for search. Default `--sort popularity` ranks by `log10(downloads+1) + 0.3*mirror_count + format_quality + 0.5*recency + edition_bonus` when the per-MD5 stats endpoint is reachable (default since SPEC 09), falling back to the mirror-dominant v0.2 formula when it isn't. Output columns: `MD5  SCORE  EXT  YEAR  Nm  DL  e<N>  TITLE` where `DL` is the lifetime download count (`-` when the stats endpoint failed for that MD5).
 
 **Intent split (important)**: pick the sort by what the user actually wants:
 
 | User intent | Sort | Why |
 |---|---|---|
-| "the version most people read" / mainstream pick | `popularity` (default) | Mirror count + format + recency + capped edition bonus. Replication-weighted; correlates with demand on mainstream titles but biased on niches. |
+| "the version most people read" / mainstream pick | `popularity` (default) | log10(downloads) + 0.3*mirrors + format + recency + capped edition bonus. Demand-weighted via the per-MD5 stats endpoint; fallback to v0.2 mirror-only formula when stats fail. |
 | "the absolute latest upload, even if barely circulated" | `--sort newest` | AA server-side upload-date sort (NOT publication year). |
 | Mix of "canonical" + "freshly uploaded" | `browse --hybrid` | Issues popularity + newest in sequence, dedups by MD5, round-robins. Marks overlap with 🆕. |
 
-Popularity includes a capped edition bonus so 2nd/3rd editions usually surface above older editions, but mirror count dominates within the same edition. If the user asks "is there a newer edition?" and popularity didn't surface one, retry with `--sort newest`.
+Popularity includes a capped edition bonus so 2nd/3rd editions usually surface above older editions; downloads still dominates within the same edition. If the user asks "is there a newer edition?" and popularity didn't surface one, retry with `--sort newest`.
+
+**Grouping** (`browse` defaults to on, `search` defaults to off): AA often has 3-5 separate uploads of the same book under different MD5s. The grouped view collapses them by normalized title prefix + year tolerance ±1 and shows aggregate downloads. Flags: `--group-by-title` (force on), `--no-group` (force off).
 
 **Filter flags** stack with any sort (all AND):
 
@@ -116,11 +118,23 @@ Report to the user:
 - File size (`ls -lh`)
 - Quota remaining (if surfaced): "X of 75 fast-downloads left today"
 
+### Step 4b: Details on a single MD5 (SPEC 09)
+
+```bash
+python3 ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/annas_fetch.py \
+  details <md5>
+```
+
+No member key needed. Prints `total / last 7d / last 30d / fetched_at`. Use when the user asks "how popular is this MD5?", "how many people downloaded X?", or has selected a candidate from a search list and wants the full popularity story before fetching. `--json` emits the full timeseries.
+
+The endpoint is `GET /dyn/downloads/stats/<md5>` — public, unauthenticated. v0.2 of this skill incorrectly claimed AA "doesn't expose download counts"; that was a recon gap, corrected 2026-05-13.
+
 ### Step 5: Housekeeping subcommands (when the user asks)
 
 | User intent | Subcommand |
 |---|---|
 | "how much quota do I have left?" | `annas-fetch quota` — prints today's local count + last AA `account_fast_download_info` blob |
+| "how many downloads does <md5> have?" | `annas-fetch details <md5>` — public stats endpoint, no key needed (see Step 4b) |
 | "build the local library index" | `annas-fetch library scan --path ~/Downloads/annas` — walks recursively, hashes books, writes `~/.cache/annas-fetch/library.jsonl`. Add `--full` to rebuild from scratch. |
 | "do I already have <md5>?" | `annas-fetch library check <md5>` — exits 0 + path on hit, 1 on miss, 3 if no index |
 | "are the AA mirrors alive?" / "is .gl down?" | `annas-fetch mirror-check` — probes every entry in `MIRRORS` with HEAD, prints latency table. Add `--json` for structured output. |
@@ -148,7 +162,9 @@ None of these require the member key (only `fetch` does).
 
 - Tool source: `~/workspace/tieubao/ops-toolkit/tools/annas-fetch/`
 - Spec: `ops-toolkit/tools/annas-fetch/SPEC.md`
-- Follow-up specs: `ops-toolkit/tools/annas-fetch/specs/` (filters, hybrid browse, library dedup, quota tracker, mirror-check, fixture refresh, mirror auto-discovery; spec 05 parallel-probe is deferred)
-- Tests: `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` (no network, 119 cases) plus `RUN_LIVE_SMOKE=1 python3 tests/smoke_live.py` (6 cases, network, no fetch)
-- API: `GET /dyn/api/fast_download.json?md5=<hash>&key=<member_key>&path_index=<0..2>&domain_index=<0..2>` → JSON `{download_url, account_fast_download_info, ...}` or `{error, ...}`
-- Cache: `~/.cache/annas-fetch/` holds `quota.jsonl` (per-fetch row), `library.jsonl` (built by `library scan`), and `mirrors.json` (auto-discovered mirror list, 30-day TTL).
+- Follow-up specs: `ops-toolkit/tools/annas-fetch/specs/` (filters, hybrid browse, library dedup, quota tracker, mirror-check, fixture refresh, mirror auto-discovery, download-stats; spec 05 parallel-probe is deferred)
+- Tests: `python3 -m unittest discover ~/workspace/tieubao/ops-toolkit/tools/annas-fetch/tests -v` (no network, 157 cases) plus `RUN_LIVE_SMOKE=1 python3 tests/smoke_live.py` (9 cases, network, no fetch)
+- APIs:
+  - `GET /dyn/api/fast_download.json?md5=<hash>&key=<member_key>&path_index=<0..2>&domain_index=<0..2>` → JSON `{download_url, account_fast_download_info, ...}` or `{error, ...}` (member-key required, drives `fetch`)
+  - `GET /dyn/downloads/stats/<md5>` → JSON `{total, timeseries_x, timeseries_y, downloads_total}` (public, drives `details` and the popularity enrichment in `search` / `browse`)
+- Cache: `~/.cache/annas-fetch/` holds `quota.jsonl` (per-fetch row), `library.jsonl` (built by `library scan`), `mirrors.json` (auto-discovered mirror list, 30-day TTL), and `downloads.jsonl` (per-MD5 download counts, 24h TTL).
