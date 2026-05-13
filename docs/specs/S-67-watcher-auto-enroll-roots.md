@@ -126,8 +126,8 @@ chezmoi managed | grep ops-tool-shape                      # back in the set
 - [x] Tick in `docs/tasks.md`
 - [x] Hostname-tagged entry in `docs/sync-log.md`
 - [x] `tests/dotfiles-watch.sh` passes 30/30 (26 prior + 4 new for S-67)
-- [ ] Verified end-to-end on Mac mini: `chezmoi forget` a skill, trigger a tick, observe `+ enrolled` in log, `chezmoi managed` re-includes it (deferred until after PR merge + `dotfiles watch install`)
-- [ ] `/dotfiles-sync` skill text reviewed: either no surprise from drift section showing `+ enrolled` lines, or skill text updated to mention enrollment is now automatic for SKILL.md (deferred; the drift section already accepts `+ <path>` lines, `+ enrolled <path>` is a strict superset of that format)
+- [x] Verified end-to-end on Mac mini 2026-05-13: post-merge `dotfiles watch install` + `dotfiles watch now` enrolled 8 unmanaged skills in one pass (ops-tool-shape, ops-tool-docs, agency-lead-radar, image-spec, peon-ping-{config,log,toggle,use}). Log shows `+ enrolled` line per skill, `TICK done (passes=0)` confirms the pure-enroll case. `chezmoi managed | grep ops-tool` returns both rows. First-tick batch revealed the gap was wider than the 2 known cases.
+- [x] `/dotfiles-sync` skill text not updated: the drift section already accepts `+ <path>` lines, so `+ enrolled <path>` is a strict superset of the format. No surprise in the rendered Drift section.
 
 ## Implementation notes
 
