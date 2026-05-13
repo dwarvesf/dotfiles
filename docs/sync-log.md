@@ -6,6 +6,22 @@ context.
 
 ---
 
+## [2026-05-13] S-68 doctor idle-state fix @ Mac-mini
+
+Third same-day follow-up to S-66. Closes the false-positive in the S-66 doctor's `agent-wp` check that fired `[err] agent: com.truonghan.dotfiles-watcher loaded but state=notrunning` on healthy idle machines.
+
+Root cause: the WatchPaths agent (`com.truonghan.dotfiles-watcher`) has no `KeepAlive` and no `StartInterval`. launchd loads it at boot, then keeps it idle waiting for an mtime change on one of the ~120 enumerated paths. Steady state is `waiting` or `not running`, not `running`. The doctor's `if state == running then ok else err` was correct for the fswatch sibling (KeepAlive=true, always `running`) but wrong for the WatchPaths agent.
+
+Fix: `check_agent` now treats `launchctl print` exit code as the authoritative "loaded" signal. Output format changes from `[ok] agent: ... running` to `[ok] agent: ... loaded (state=waiting)`. Accept set: `running|waiting|notrunning|idle|""`. Unexpected states fall through to `[warn]` with "Fix: dotfiles watch install".
+
+Tests: new case `4.1b doctor exits 0 on an idle WP agent (S-68)` uses `FAKE_LC_WP=loaded` (which the fake-launchctl shim emits as `state = waiting`). Suite 31/31 (30 prior + 1 new). The S-66 matrix had only `FAKE_LC_WP=running` and `FAKE_LC_WP=missing`, which is why the bug shipped.
+
+Same root signal seeded the misread earlier today: when I first audited "are the watchers doing their job?" I read the `[err] agent-wp` line as truth, then had to back out the misdiagnosis when the live state showed the WP agent was just idle. S-68 closes that loop.
+
+End-to-end verification deferred until post-merge `dotfiles watch install` + `dotfiles watch doctor`.
+
+---
+
 ## [2026-05-13] S-67 watcher auto-enroll ship @ Mac-mini
 
 Same-day follow-up to S-66. The new-skill gap surfaced while answering "did the watcher sync the new skills to the dotfile repo?" The honest answer was no: two skills shipped today (`ops-tool-shape`, `ops-tool-docs`) and the dotfiles repo working tree was clean, because the tick filtered `chezmoi status` to `^.M ` rows only and skipped untracked-by-chezmoi files (S-64 § Out of scope, line 79 of the tick).

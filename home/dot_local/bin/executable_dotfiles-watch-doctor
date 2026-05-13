@@ -56,11 +56,20 @@ check_agent() {
         return
     }
     state=$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*state = //p' | head -1 | tr -d ' ')
-    if [ "$state" = "running" ]; then
-        ok "agent: $label running"
-    else
-        err "agent: $label loaded but state=${state:-unknown}" "dotfiles watch install"
-    fi
+    # WatchPaths-only agents (no KeepAlive, no StartInterval) are loaded but
+    # `state = waiting` (or `not running` on macOS 26.x) between events. That
+    # is the steady state, not a fault. `state = running` is only true mid-
+    # tick. The fswatch agent (KeepAlive=true) is `running` continuously.
+    # Treat launchctl-print success as "loaded"; report the state value for
+    # context but do not gate ok/err on it. S-68.
+    case "$state" in
+        running|waiting|notrunning|idle|"")
+            ok "agent: $label loaded (state=${state:-unknown})"
+            ;;
+        *)
+            warn "agent: $label loaded but state=$state" "dotfiles watch install"
+            ;;
+    esac
 }
 check_agent "$LABEL_WP"
 check_agent "$LABEL_FS"

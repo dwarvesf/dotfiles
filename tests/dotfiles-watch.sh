@@ -479,6 +479,38 @@ test_doctor_clean() {
     return 0
 }
 
+# S-68: a WatchPaths-only agent is `state = waiting` (loaded but not currently
+# ticking) the vast majority of the time. The doctor must treat this as [ok],
+# not [err]. Pre-S-68 this fired a false-positive on every idle deploy.
+test_doctor_agent_wp_idle() {
+    local home out rc
+    home=$(mktemp -d)
+    _setup_doctor_home "$home"
+    _seed_clean_fingerprint "$home"
+    out=$(FAKE_MANAGED="" FAKE_LC_WP=loaded FAKE_LC_FS=running _run_doctor "$home" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "expected exit 0 for idle WP agent, got $rc"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if echo "$out" | grep -qE '^\[(warn|err)\][[:space:]]+agent: com.truonghan.dotfiles-watcher\b'; then
+        echo "idle WP agent should be [ok], not warn/err:"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    if ! echo "$out" | grep -qE '^\[ok\][[:space:]]+agent: com.truonghan.dotfiles-watcher loaded'; then
+        echo "missing expected [ok] line for idle WP agent"
+        echo "$out"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
 test_doctor_agent_wp_missing() {
     local home out rc
     home=$(mktemp -d)
@@ -611,6 +643,7 @@ test_wiring_script_writes_fingerprint() {
 }
 
 run "4.1 doctor exits 0 on a clean machine"          test_doctor_clean
+run "4.1b doctor exits 0 on an idle WP agent (S-68)" test_doctor_agent_wp_idle
 run "4.2 doctor errs when WatchPaths agent missing"  test_doctor_agent_wp_missing
 run "4.3 doctor warns on plist fingerprint drift"    test_doctor_plist_drift
 run "4.4 doctor warns on stale lock (>60s)"          test_doctor_lock_stale
