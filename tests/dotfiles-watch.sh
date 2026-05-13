@@ -86,6 +86,11 @@ case "${1:-}" in
         echo "$@" >> "$state/readd"
         exit 0
         ;;
+    add)
+        shift
+        echo "$@" >> "$state/added"
+        exit 0
+        ;;
 esac
 exit 0
 SHIM
@@ -249,6 +254,144 @@ run "3.2 absorb single-pass drift"          test_single_pass_absorb
 run "3.3 drift loop iterates until clean"   test_drift_loop_iterates
 run "3.4 mkdir-lock coalesces parallel"     test_lock_coalesces
 run "3.5 absorb MM (both-changed) row"      test_absorb_MM_status
+
+# ---------------------------------------------------------------
+# 3b. Auto-enroll (S-67)
+#
+# AUTO_ENROLL_GLOBS in the tick currently has one entry:
+#     ${HOME}/.claude/skills/*/SKILL.md
+# Tests below exercise enroll, idempotency, glob discipline, and the
+# enroll+absorb mixed case.
+# ---------------------------------------------------------------
+section "3b. Auto-enroll (S-67)"
+
+test_enroll_new_skill() {
+    local home
+    home=$(mktemp -d)
+    _setup_fake_home "$home"
+    mkdir -p "$home/.claude/skills/foo"
+    echo "test skill" > "$home/.claude/skills/foo/SKILL.md"
+    export FAKE_MANAGED=""
+    export FAKE_STATUS_LINES=""
+    _run_tick "$home" || { rm -rf "$home"; return 1; }
+    local log="$home/Library/Logs/dotfiles-watcher.log"
+    grep -q '+ enrolled .claude/skills/foo/SKILL.md' "$log" || {
+        echo "missing + enrolled line"
+        cat "$log" 2>/dev/null
+        rm -rf "$home"
+        return 1
+    }
+    # Verify chezmoi add actually got the absolute path.
+    grep -Fq "$home/.claude/skills/foo/SKILL.md" "$home/.fake-state/added" 2>/dev/null || {
+        echo "chezmoi add was not called with the expected path"
+        cat "$home/.fake-state/added" 2>/dev/null
+        rm -rf "$home"
+        return 1
+    }
+    rm -rf "$home"
+    return 0
+}
+
+test_enroll_idempotent_when_managed() {
+    local home
+    home=$(mktemp -d)
+    _setup_fake_home "$home"
+    mkdir -p "$home/.claude/skills/foo"
+    echo "test skill" > "$home/.claude/skills/foo/SKILL.md"
+    export FAKE_MANAGED=".claude/skills/foo/SKILL.md"
+    export FAKE_STATUS_LINES=""
+    _run_tick "$home" || { rm -rf "$home"; return 1; }
+    local log="$home/Library/Logs/dotfiles-watcher.log"
+    if grep -q '+ enrolled' "$log" 2>/dev/null; then
+        echo "should not enroll an already-managed file"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    fi
+    if [ -s "$home/.fake-state/added" ]; then
+        echo "chezmoi add was called on an already-managed file"
+        cat "$home/.fake-state/added"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_enroll_glob_discipline() {
+    # Non-SKILL.md files inside a skill dir must not be enrolled.
+    local home
+    home=$(mktemp -d)
+    _setup_fake_home "$home"
+    mkdir -p "$home/.claude/skills/foo"
+    echo "readme" > "$home/.claude/skills/foo/README.md"
+    export FAKE_MANAGED=""
+    export FAKE_STATUS_LINES=""
+    _run_tick "$home" || { rm -rf "$home"; return 1; }
+    local log="$home/Library/Logs/dotfiles-watcher.log"
+    if grep -q '+ enrolled' "$log" 2>/dev/null; then
+        echo "README.md should not match the SKILL.md glob"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    fi
+    if [ -s "$home/.fake-state/added" ]; then
+        echo "chezmoi add was called on a non-SKILL file"
+        cat "$home/.fake-state/added"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+test_enroll_and_absorb_mixed() {
+    # Enrollment AND drift absorb in the same tick. Log should show both,
+    # passes=1 (one drift-loop iteration).
+    local home
+    home=$(mktemp -d)
+    _setup_fake_home "$home"
+    mkdir -p "$home/.claude/skills/new"
+    echo "new skill" > "$home/.claude/skills/new/SKILL.md"
+    export FAKE_MANAGED=""
+    export FAKE_STATUS_LINES=$' M .claude/settings.json'
+    _run_tick "$home" || { rm -rf "$home"; return 1; }
+    local log="$home/Library/Logs/dotfiles-watcher.log"
+    grep -q '+ enrolled .claude/skills/new/SKILL.md' "$log" || {
+        echo "missing enrolled line"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    }
+    grep -q '+ .claude/settings.json' "$log" || {
+        echo "missing absorb line"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    }
+    grep -q 'TICK done (passes=1)' "$log" || {
+        echo "expected passes=1"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    }
+    # Exactly one TICK start (enrollment block opens it; drift loop must not reopen).
+    local starts
+    starts=$(grep -c 'TICK start' "$log")
+    if [ "$starts" != "1" ]; then
+        echo "expected 1 TICK start line, got $starts"
+        cat "$log"
+        rm -rf "$home"
+        return 1
+    fi
+    rm -rf "$home"
+    return 0
+}
+
+run "3b.1 enroll new SKILL.md (unmanaged)"          test_enroll_new_skill
+run "3b.2 enroll idempotent on already-managed"     test_enroll_idempotent_when_managed
+run "3b.3 enroll glob excludes non-SKILL.md"        test_enroll_glob_discipline
+run "3b.4 enroll + absorb in one tick"              test_enroll_and_absorb_mixed
 
 # ---------------------------------------------------------------
 # 4. dotfiles-watch-doctor (S-66 health audit)
