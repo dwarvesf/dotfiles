@@ -6,6 +6,26 @@ context.
 
 ---
 
+## [2026-05-13] S-67 watcher auto-enroll ship @ Mac-mini
+
+Same-day follow-up to S-66. The new-skill gap surfaced while answering "did the watcher sync the new skills to the dotfile repo?" The honest answer was no: two skills shipped today (`ops-tool-shape`, `ops-tool-docs`) and the dotfiles repo working tree was clean, because the tick filtered `chezmoi status` to `^.M ` rows only and skipped untracked-by-chezmoi files (S-64 § Out of scope, line 79 of the tick).
+
+What landed:
+- `home/dot_local/bin/executable_dotfiles-watcher-tick` gains an enrollment pass before the existing drift loop. Reads `AUTO_ENROLL_GLOBS` (initial single entry: `${HOME}/.claude/skills/*/SKILL.md`), expands via `eval` + `set --`, filters via `grep -Fxq` against `chezmoi managed`, runs `chezmoi add` on each unmanaged match. Idempotent: subsequent ticks short-circuit on the grep. New log format `+ enrolled <relpath>` (distinct from existing `+ <relpath>` for re-add).
+- `TICK start` / `TICK done (passes=N)` semantics extended: emit when either enrollment or drift absorbed. Pure-enroll case prints `passes=0`. Mixed case prints `passes=N` reflecting drift iterations.
+- `tests/dotfiles-watch.sh` § 3b: 4 new cases. Fake `chezmoi` shim grows an `add` subcommand that appends to `$state/added`. Cases cover enroll-new-SKILL, idempotent-when-managed, glob-discipline (README.md inside a skill dir is skipped), and mixed enroll+absorb in one tick.
+- `docs/specs/S-67-watcher-auto-enroll-roots.md` drafted earlier in the same session; spec frontmatter flipped to `done`.
+
+No plist generator change. fswatch already covers `~/.claude/` recursively, so launchd sees the file-create event on a new skill. The wiring script's `managed-set fingerprint` line re-fires on the next `chezmoi apply` to fold the new file into WatchPaths. Transient window: between auto-enroll and the next `chezmoi apply`, the file is only watched via fswatch, not WatchPaths. Functionally correct, slight redundancy.
+
+End-to-end verification deferred until post-merge `dotfiles watch install` + `dotfiles watch now` on the Mini. Expected: log line `+ enrolled .claude/skills/ops-tool-shape/SKILL.md` and `+ enrolled .claude/skills/ops-tool-docs/SKILL.md`, then `chezmoi managed | grep ops-tool` returns both rows.
+
+Verifier: shellcheck on the patched tick (SC2295 caught on first pass, fixed by quoting `"$HOME"` inside `${f#}`), full suite 30/30 pass.
+
+Resists configurability: `AUTO_ENROLL_GLOBS` is a hard-coded constant in the tick. No chezmoi-data field, no per-machine override. Revisit when the second auto-enroll case lands.
+
+---
+
 ## [2026-05-13] S-66 watcher health audit ship @ Mac-mini
 
 Shipped the post-S-64 follow-up identified earlier in the same session: `/dotfiles-sync` now audits S-64 watcher health.
