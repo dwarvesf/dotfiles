@@ -6,6 +6,21 @@ context.
 
 ---
 
+## [2026-05-13] sync @ Mac-mini (cw.fish re-track)
+
+Re-tracking after the S-67/S-68 chain. The watcher's auto-enroll pass cleaned up the skill backlog; the only remaining untracked item that surfaced through `/dotfiles-sync` was `~/.config/fish/functions/cw.fish` (Claude Code worktree-plus-tmux shortcut, 3 lines, machine-agnostic). Originally tracked by Han in a local-only `3fe4a11` commit earlier today that never reached origin (branch protection rejected the direct push, and the commit was dropped when local main was reset to origin/main during the S-67 PR chain).
+
+Now committed to core. Verdict was the same as before (machine-agnostic, useful on any developer machine), so the only consequence of the lost commit was the round-trip cost.
+
+Other items triaged in this sync, all deferred:
+- `openai.chatgpt` vscode extension installed but not in `extensions.txt`: skipped (user opted not to track this session)
+- 5 stale entries in `extensions.txt` (`docker.docker`, `dwarvesf.md-ar-ext`, `github.copilot-chat`, `ms-vsliveshare.vsliveshare`, `ocamllabs.ocaml-platform`): skipped (carried over from 2026-05-08 deferred batch; user opted to keep)
+- `trading-egress-tokyo.local` already correctly suffixed `.local` (gitignored); no action
+
+Notify-only checks all silent or healthy: watcher 6/6 ok (post-S-68), secrets cache full, hardcoded-secrets scan clean, guardrails up-to-date.
+
+---
+
 ## [2026-05-13] S-68 doctor idle-state fix @ Mac-mini
 
 Third same-day follow-up to S-66. Closes the false-positive in the S-66 doctor's `agent-wp` check that fired `[err] agent: com.truonghan.dotfiles-watcher loaded but state=notrunning` on healthy idle machines.
