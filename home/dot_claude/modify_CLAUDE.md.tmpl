@@ -295,4 +295,39 @@ Bad: `scaffold/spec-018-p1-agent-skeleton-2026-04-22` (date + spec ID + phase ma
 - Implement exactly what the spec says, no creative additions
 - If the spec is ambiguous, ask before guessing
 - After implementation, check the spec's "Test" section and run those exact tests
+
+# macOS LaunchAgent / LaunchDaemon authoring (BTM-friendly)
+
+When authoring a `*.plist` for a launch agent or daemon, the script must appear in macOS Background Task Manager (System Settings → General → Login Items & Extensions) with its real name and the exec icon. Two rules:
+
+1. **`ProgramArguments[0]` is the absolute path to the script itself.** Never `/bin/sh`, never `/bin/bash`, never any other interpreter wrapper. The script carries its own shebang (`#!/usr/bin/env bash`) and is `chmod +x`. Wrapping with `/bin/sh` collapses every script under one "sh" row in BTM.
+
+2. **The launcher script (the file referenced in `ProgramArguments[0]`) has NO `.sh` extension.** Files ending in `.sh` get the generic blank-page icon. Files without an extension get the green-on-black "exec" badge icon, easier to scan visually. Helper libraries that are `source`'d by the launcher keep `.sh`; only the top-level entry drops it.
+
+Bad:
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/bin/bash</string>
+  <string>/path/to/mini.tide.sh</string>
+</array>
+```
+BTM row: `bash` with exec icon. Useless to distinguish from any other bash-wrapped agent.
+
+Good:
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/path/to/mini-tide</string>
+</array>
+```
+BTM row: `mini-tide` with exec icon. Script has `#!/usr/bin/env bash` + `chmod +x`.
+
+After deploying any new plist, verify:
+```
+launchctl print system/<label> | grep -i program
+```
+Then visually confirm in System Settings → General → Login Items & Extensions.
+
+Third-party plists (Nix, OrbStack, etc.) are exempt; we don't rewrite vendor-installed plists.
 MARKDOWN
