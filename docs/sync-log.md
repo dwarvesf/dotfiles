@@ -6,6 +6,19 @@ context.
 
 ---
 
+## [2026-05-14] sync @ Mac-mini (mylaunchd helpers)
+
+Tahoe (macOS 26) removed the "Allow in the Background" list from System Settings → Login Items & Extensions, leaving CLI-installed LaunchAgents / LaunchDaemons (`mini.*`, `foundation.d.*`, `com.truonghan.*`) with no UI surface. Added two fish functions to replace it:
+
+- `mylaunchd` — user-only, no sudo (default, fast)
+- `mylaunchd-all` — user + system, prompts for sudo
+
+Both machine-agnostic; the filter (`mini\.|foundation\.d\.|truonghan`) is identical across hosts that follow the namespace conventions in `~/.claude/CLAUDE.md`.
+
+Other drift in tree (deferred): modified `dotfiles-watcher-fswatch` / `dotfiles-watcher-tick` executables, untracked `home/dot_claude/skills/tide/` directory.
+
+---
+
 ## [2026-05-13] sync @ Mac-mini (cw.fish re-track)
 
 Re-tracking after the S-67/S-68 chain. The watcher's auto-enroll pass cleaned up the skill backlog; the only remaining untracked item that surfaced through `/dotfiles-sync` was `~/.config/fish/functions/cw.fish` (Claude Code worktree-plus-tmux shortcut, 3 lines, machine-agnostic). Originally tracked by Han in a local-only `3fe4a11` commit earlier today that never reached origin (branch protection rejected the direct push, and the commit was dropped when local main was reset to origin/main during the S-67 PR chain).
