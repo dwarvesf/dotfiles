@@ -6,6 +6,37 @@ context.
 
 ---
 
+## [2026-05-16] sync @ Hans Air M4 (untracked-brew classification + SA cache refresh)
+
+Brewfile (core, home/dot_Brewfile.tmpl):
+  - added tap: steipete/tap
+  - added brew: pi-coding-agent, steipete/tap/peekaboo
+
+Brewfile (local, ~/.Brewfile.local — not committed):
+  - added 4 superseded-but-kept: hub, pipx, the_silver_searcher, yarn
+  - added 3 misc local: nono (capability-sandbox shell), poppler (PDF lib), python@3.10 (legacy)
+
+Conflicts surfaced and resolved:
+  - ollama: brew formula was installed alongside `cask "ollama-app"` (Brewfile comment says they conflict). User chose "cask wins" → user runs `brew uninstall ollama`.
+  - microsoft-auto-update cask: skipped (auto-installed by Office/Edge).
+  - libusb in Brewfile but not installed: deferred (decide later).
+
+SSH:
+  - Backed up trading-egress-tokyo.local to 1P Private vault (Secure Note id 64llazbsp6ggvdnfgipej2od64). Skill's earlier "no backup" check was a false negative caused by `op item get` erroring on cross-vault name collisions; the duplicate I created was deleted, then recreated cleanly.
+  - Side finding: mini.local 1P backup is STALE (393 chars stored vs 846 on disk). Not fixed in this session; surface next sync.
+  - All three 1P SSH backups (egress, mini, trading-egress-tokyo) share an `op item create` quirk: multi-line notesPlain values get stored with literal `"` wrap-quotes. Restoration must strip them. Documented but not fixed.
+
+Secrets:
+  - OP_SERVICE_ACCOUNT_TOKEN cache refreshed via `dotfiles secret push OP_SERVICE_ACCOUNT_TOKEN --local`. Login keychain was holding the previous (deleted-upstream) SA token; 1P item itself had already been rotated a week earlier. No SA recreation needed. Verified: bearer-path `op whoami` now returns the account URL in fresh fish shells.
+
+chezmoi apply NOT yet run (user-gated per project permissions). 17 pending entries + 3 run_onchange scripts (brew-bundle, dotfiles-watcher S-64 LaunchAgent install, secret-guard-test) will deploy on next `chezmoi apply`.
+
+Pending user actions:
+  - `chezmoi apply` (deploys repo → machine)
+  - `brew uninstall ollama` (resolves the cask/formula conflict)
+
+---
+
 ## [2026-05-14] sync @ Mac-mini (mylaunchd helpers)
 
 Tahoe (macOS 26) removed the "Allow in the Background" list from System Settings → Login Items & Extensions, leaving CLI-installed LaunchAgents / LaunchDaemons (`mini.*`, `foundation.d.*`, `com.truonghan.*`) with no UI surface. Added two fish functions to replace it:
