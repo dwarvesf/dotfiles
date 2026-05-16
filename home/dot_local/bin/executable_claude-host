@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# claude-host: emit machine identity as one key=value line + a prescriptive
+# don't-ssh-here reminder. Useful mid-session when the SessionStart banner
+# has aged out of Claude's context window or when the user's phrasing
+# ("the mini", "this machine") needs an authoritative resolution.
+#
+# Mirrors the role table in ~/.claude/CLAUDE.md "Machines I work from".
+# Keep them in sync.
+
+set -eu
+
+USER_NAME=$(whoami)
+LOCAL_HOST=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
+HARDWARE=$(sysctl -n hw.model 2>/dev/null || uname -m)
+
+# Tailscale name, if installed. Tolerant of cli-not-installed / not-logged-in.
+TS_NAME=""
+if command -v tailscale >/dev/null 2>&1; then
+  TS_NAME=$(tailscale status --json 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null \
+    || true)
+fi
+
+case "$LOCAL_HOST" in
+  Mac-mini|mac-mini|mac-mini-danang)
+    ROLE=mini
+    ALIASES='mini / mini-tieubao / mac-mini / mac-mini-danang / mini-lan'
+    ;;
+  Hans-Air-M4|hans-air-m4|mac-air)
+    ROLE=air
+    ALIASES='air / mac-air / Hans-Air-M4'
+    ;;
+  trading-egress-tokyo)
+    ROLE=trading-egress-tokyo
+    ALIASES='egress-tokyo / trading-egress-tokyo'
+    ;;
+  *)
+    ROLE=unknown
+    ALIASES="$LOCAL_HOST"
+    ;;
+esac
+
+printf 'host=%s role=%s user=%s hardware=%s tailscale=%s\n' \
+  "$LOCAL_HOST" "$ROLE" "$USER_NAME" "$HARDWARE" "${TS_NAME:-none}"
+printf 'note: you are RUNNING ON %s. Do not ssh to: %s. Run commands locally.\n' \
+  "$LOCAL_HOST" "$ALIASES"

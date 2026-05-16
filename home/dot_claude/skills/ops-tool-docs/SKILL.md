@@ -1,14 +1,14 @@
 ---
 name: ops-tool-docs
 description: |
-  Write or refresh the doc CONTENT (README, MANUAL, RUNBOOK, SPEC, `docs/architecture.md`, per-feature SPECs under `docs/specs/`, ADRs under `docs/decisions/`) for a tool inside `~/workspace/tieubao/ops-toolkit/tools/`. Symptoms include "write the architecture doc for X", "this tool needs a manual", "document how X works", "explain the design decisions for X", "fill in the docs for X", "the housekeeper docs look great, write the same kind of docs for X", "X has no MANUAL.md, can you write one?", "I just finished X, write its docs". Reads the tool's existing code, `tool.toml`, entry-point, and tests to extract its real purpose, commands, dependencies, and host placement; then writes each missing doc FROM SCRATCH using audience-targeted intent. NOT a template fill: each tool's docs are shaped to that tool's reality. Calibration reference (read for voice + length, do not copy verbatim): `~/workspace/tieubao/ops-toolkit/tools/housekeeper/`. Pre-condition: the tool's folder layout is already correct. If not, hand off to the sibling skill `ops-tool-shape` first. NOT for structure changes (use `ops-tool-shape`), NOT for source-code edits, NOT for tools outside ops-toolkit.
+  Write or refresh the doc CONTENT (README, MANUAL, RUNBOOK, SPEC, `docs/architecture.md`, per-feature SPECs under `docs/specs/`, ADRs under `docs/decisions/`) for a tool inside `~/workspace/tieubao/ops-toolkit/tools/`. Symptoms include "write the architecture doc for X", "this tool needs a manual", "document how X works", "explain the design decisions for X", "fill in the docs for X", "the tide docs look great, write the same kind of docs for X", "X has no MANUAL.md, can you write one?", "I just finished X, write its docs". Reads the tool's existing code, `tool.toml`, entry-point, and tests to extract its real purpose, commands, dependencies, and host placement; then writes each missing doc FROM SCRATCH using audience-targeted intent. NOT a template fill: each tool's docs are shaped to that tool's reality. Calibration reference (read for voice + length, do not copy verbatim): `~/workspace/tieubao/ops-toolkit/tools/tide/`. Pre-condition: the tool's folder layout is already correct. If not, hand off to the sibling skill `ops-tool-shape` first. NOT for structure changes (use `ops-tool-shape`), NOT for source-code edits, NOT for tools outside ops-toolkit.
 ---
 
 # ops-tool-docs
 
 This skill owns the **prose side** of the ops-toolkit tool standard: writing README, MANUAL, RUNBOOK, SPEC, architecture diagrams, per-feature SPECs, and ADRs. It assumes the folder structure is already correct; the sibling skill `ops-tool-shape` handles the file-presence side.
 
-The canonical reference is `~/workspace/tieubao/ops-toolkit/tools/housekeeper/`. Read it to calibrate voice, density, and shape. **Do not copy from it.** The whole point of writing per-tool docs is to capture *that* tool's reality, not housekeeper's reality with names swapped.
+The canonical reference is `~/workspace/tieubao/ops-toolkit/tools/tide/`. Read it to calibrate voice, density, and shape. **Do not copy from it.** The whole point of writing per-tool docs is to capture *that* tool's reality, not tide's reality with names swapped. (Housekeeper was the canonical reference until its 2026-05-14 deletion; tide inherited the doc shape. Verbatim snippets below remain housekeeper-content because they still demonstrate voice/length faithfully; they are historical calibration material, not live references.)
 
 ## When to use
 
@@ -21,7 +21,7 @@ Trigger phrases:
 - "explain the design decisions for X"
 - "fill in the docs for X"
 - "I just finished X, write its docs"
-- "the housekeeper docs look great, do that for X"
+- "the tide docs look great, do that for X"
 - "what should the README say for X?"
 
 Do NOT fire when the user is asking about structure:
@@ -34,9 +34,9 @@ Pre-flight before writing: confirm the tool's folder layout already matches `ops
 ## Hard rules (the discipline this skill encodes)
 
 1. **Read the tool first.** Before writing any doc, read its `README.md` (if any), `tool.toml`, entry-point script, key source modules, and tests. The docs must describe THIS tool's reality. Generic "this Python CLI sorts files" filler is the failure mode.
-2. **No copy-paste from housekeeper.** Housekeeper is the calibration reference: read it for voice and length, never for words. If you find yourself typing "housekeeper" into a non-housekeeper doc, stop.
+2. **No copy-paste from the canonical reference.** Tide is the live calibration reference: read it for voice and length, never for words. If you find yourself typing "tide" (or "housekeeper", which still appears in the legacy calibration snippets below) into another tool's doc, stop.
 3. **One audience per doc.** README is for first-time visitors. MANUAL is for daily users. RUNBOOK is for operators-mid-incident. Do not mix audiences in one file. If you find content drifting to the wrong audience, move it.
-4. **Match section count to reality.** Housekeeper MANUAL has 14 sections because it has 14 user-task types. A tool with one command does not get 14 sections; it gets one or two. Section count follows from content, not from a template.
+4. **Match section count to reality.** A tide-shaped MANUAL has as many sections as the tool has user-task types. A tool with one command does not get 14 sections; it gets one or two. Section count follows from content, not from a template.
 5. **No ADRs without history.** Don't invent ADRs for tools with no design history worth recording. ADRs exist for *past decisions where alternatives were considered and one was picked for a reason*. A tool that was built straight from one idea has zero ADRs.
 6. **Update INVENTORY.** Every doc-write closes a row's gap in `_meta/INVENTORY.md`. When all required files are present and non-empty, flip the tier to `done`.
 
@@ -78,7 +78,7 @@ The list below describes the *intent* of each artifact, not a checkbox to tick. 
 
 **Anti-patterns:**
 - Generic "how to use this tool" preamble. Cut. Go straight to the first task.
-- Pad to match housekeeper's 14 sections. If the tool has 4 tasks, write 4 sections.
+- Pad to match the calibration reference's section count. If the tool has 4 tasks, write 4 sections.
 - Mix incident response in. If a section says "what to do when X breaks", move it to RUNBOOK and cross-link.
 
 ### RUNBOOK.md
@@ -183,10 +183,10 @@ This is the main workflow. The tool exists, its code works, but its docs are thi
 4. **Decide which docs need writing.** Only the missing required ones, plus any optional ones the user explicitly asked for.
 5. **For each doc, draft from the tool's reality.**
    - Sit with the tool's actual surface for a moment before writing.
-   - Use the housekeeper doc of the same kind as a *voice* reference, not a *content* reference.
+   - Use the tide doc of the same kind as a *voice* reference, not a *content* reference.
    - Resist filler. "This is a Python CLI" is filler; "Watches `~/Downloads` and moves files into `~/Documents/Inbox/` per a confidence threshold" is content.
 6. **Sanity-check the rendered doc.**
-   - No `housekeeper` mentions in a non-housekeeper doc.
+   - No `tide` (or stale `housekeeper`) mentions in a non-tide / non-housekeeper doc.
    - No `{{placeholder}}` strings.
    - No claimed features the tool doesn't have.
    - Section count matches content density (not the calibration reference's count).
@@ -196,10 +196,12 @@ This is the main workflow. The tool exists, its code works, but its docs are thi
 
 <!--
   CALIBRATION ONLY: read these to absorb voice + structure, NEVER copy.
-  Every snippet below is verbatim housekeeper content. If you find yourself
-  pasting any of it into a non-housekeeper doc, stop. The whole point of this
-  skill is that each tool's docs describe THAT tool, not housekeeper with the
-  name swapped.
+  Every snippet below is verbatim housekeeper content from before
+  housekeeper was deleted 2026-05-14. They remain in this skill because
+  they still demonstrate voice + density faithfully; the calibration target
+  is now tools/tide/. If you find yourself pasting any of these snippets
+  into a non-housekeeper doc, stop. The whole point of this skill is that
+  each tool's docs describe THAT tool.
 -->
 
 These are short illustrations of voice + shape. Read them, write fresh from each tool's reality.
@@ -281,24 +283,24 @@ Why this works: ASCII only, light theme, labels are short, takeaway is one sente
 
 ## Anti-patterns (what BAD doc-writing looks like)
 
-- **Copy housekeeper docs, find-replace tool name.** The reader sees through this in two paragraphs. The tone is wrong, the examples don't apply, the gotchas don't match.
+- **Copy the canonical reference's docs, find-replace tool name.** The reader sees through this in two paragraphs. The tone is wrong, the examples don't apply, the gotchas don't match.
 - **Pad to match a template's section count.** A tool with 3 user tasks does not get a 14-section MANUAL.
-- **Mention features the tool doesn't have.** "Housekeeper supports `housekeeper archive` (coming soon)" is fine for housekeeper. "X supports archiving (coming soon)" for a tool that doesn't actually plan archiving is fabrication.
+- **Mention features the tool doesn't have.** "Tide supports `tide archive` (coming soon)" is fine if archive is actually planned for tide. "X supports archiving (coming soon)" for a tool that doesn't actually plan archiving is fabrication.
 - **Write `docs/architecture.md` for a single-file tool.** If the architecture is "one script that does one thing", the README is enough. No diagram.
 - **Backfill ADRs for tools with no decision history.** If you can't name what was rejected and why, the ADR shouldn't exist.
 - **"This tool is a Python CLI."** Filler. Cut. Open with what the tool DOES.
 - **Long preamble before getting to install/use.** README anti-pattern. The reader skipped to the code block; meet them there.
 
-## Worked example: housekeeper's MANUAL (guided tour)
+## Worked example: tide's MANUAL (guided tour)
 
-Read `~/workspace/tieubao/ops-toolkit/tools/housekeeper/MANUAL.md` and note:
+Read `~/workspace/tieubao/ops-toolkit/tools/tide/MANUAL.md` and note the same pattern the deleted-housekeeper MANUAL taught (tide inherited the structure unchanged):
 
-- **§1 Install + first-day verification**: combines install commands with verification, because they're temporally adjacent for the user. One section, not two.
-- **§2 Daily commands**: a table, not a tutorial. The user wants the command, not the lesson.
-- **§3 Configure**: env vars + sentinels are different categories of knob but same audience (someone tuning the agent). Combined.
-- **§7 Investigate a wrong classification**: gives the SQLite queries the user would actually run. Not "open the database and look around."
-- **§8 Undo a bad move**: enumerates refusal cases. Every gotcha is named so the user knows what's normal vs broken.
-- **§11 Reduce subscription burn**: has three sub-knobs (cap tuning, status watching, full-disable). Each is one paragraph. Tight.
+- **Install + first-day verification**: install commands sit next to verification because they're temporally adjacent for the user. One section, not two.
+- **Daily commands**: a table, not a tutorial. The user wants the command, not the lesson.
+- **Configure**: env vars + sentinel files (`.tidy-ignore`, `.tidy-watch`) are different categories of knob but same audience (someone tuning the agent). Combined.
+- **Investigate a wrong classification**: gives the SQLite queries the user would actually run against `~/.local/share/tide/state.db`. Not "open the database and look around."
+- **Undo a bad move**: enumerates refusal cases. Every gotcha is named so the user knows what's normal vs broken.
+- **Bootstrap a pile** (`tide bootstrap`): tide-specific surface that housekeeper didn't have; demonstrates one-section-per-mode (top-level vs recursive) with concrete commands per mode.
 
 The pattern: each section is one user task, with one-line intent, copy-paste-able commands, expected output, one gotcha. Replicate the pattern, not the content.
 
