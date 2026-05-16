@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# run_after_apply_resign-personal-scripts.sh.tmpl
+#
+# After every `chezmoi apply`, re-sign the chezmoi-managed executable
+# scripts that BTM (Background Task Manager) treats as personal LaunchAgents.
+# Chezmoi's modify/symlink operations strip codesign xattrs from these
+# scripts every time apply runs; without this hook they revert to
+# "Unknown Developer" in BTM and lose the Apple-PKI chain.
+#
+# Background: 2026-05-16 code-signing investigation.
+# Reference: tieubao/ops-toolkit:research/2026-05-16-macos-code-signing-for-launchagents.md
+#
+# Behavior:
+#   - Find a valid codesigning identity matching "Apple Development:"
+#     (Han's enrollment under Dwarves Foundation, TeamIdentifier W777S7V8TN).
+#     Other dev identities are accepted as fallback.
+#   - Sign each target script if it exists and the identity is found.
+#   - Graceful no-op when the cert is absent (fresh Mac before 1P restore,
+#     Mini-side where the cert isn't installed yet).
+#   - Idempotent: signing an already-signed file with the same cert reproduces
+#     the same signature.
+#
+# Logs to ~/.cache/chezmoi-resign.log (one line per run).
+set -euo pipefail
+
+LOG="${HOME}/.cache/chezmoi-resign.log"
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+
+log() {
+    printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*" >> "$LOG"
+}
+
+# Only run on macOS (codesign isn't on Linux)
+if [ "$(uname)" != "Darwin" ]; then
+    log "skip: not macOS"
+    exit 0
+fi
+
+# Find an Apple Development identity if present
+IDENTITY_HASH=$(security find-identity -v -p codesigning ~/Library/Keychains/login.keychain-db 2>/dev/null \
+    | grep "Apple Development:" \
+    | head -1 \
+    | awk '{print $2}')
+
+if [ -z "$IDENTITY_HASH" ]; then
+    log "skip: no Apple Development codesigning identity in login keychain"
+    exit 0
+fi
+
+# Targets: chezmoi-managed personal scripts under ~/.local/bin/
+TARGETS=(
+    "$HOME/.local/bin/dotfiles-watcher-tick"
+    "$HOME/.local/bin/dotfiles-watcher-fswatch"
+)
+
+signed=0
+skipped=0
+for target in "${TARGETS[@]}"; do
+    if [ ! -f "$target" ]; then
+        skipped=$((skipped + 1))
+        continue
+    fi
+    # Re-sign with --options runtime to match the original signing flags
+    if codesign --force --sign "$IDENTITY_HASH" --options runtime "$target" 2>/dev/null; then
+        signed=$((signed + 1))
+    else
+        log "fail: codesign returned non-zero on $target"
+    fi
+done
+
+log "ok: signed=$signed skipped=$skipped identity=$IDENTITY_HASH"
