@@ -1,71 +1,47 @@
 #!/usr/bin/env bash
 # run_after_apply_resign-personal-scripts.sh.tmpl
 #
-# After every `chezmoi apply`, re-sign the chezmoi-managed executable
-# scripts that BTM (Background Task Manager) treats as personal LaunchAgents.
-# Chezmoi's modify/symlink operations strip codesign xattrs from these
-# scripts every time apply runs; without this hook they revert to
-# "Unknown Developer" in BTM and lose the Apple-PKI chain.
+# After every `chezmoi apply`, re-sign the personal LaunchAgent scripts
+# whose plists live in ~/Library/LaunchAgents/. Chezmoi's modify/symlink
+# operations strip codesign xattrs from the underlying scripts; without
+# this hook they revert to "Unknown Developer" in BTM every apply.
 #
-# Background: 2026-05-16 code-signing investigation.
+# Implementation lives in ops-toolkit/tools/mac-sign/. This hook is just
+# the trigger; the tool resolves the identity, walks the plists, and
+# signs each ProgramArguments[0]. No hardcoded target list here.
+#
 # Reference: tieubao/ops-toolkit:research/2026-05-16-macos-code-signing-for-launchagents.md
-#
-# Behavior:
-#   - Find a valid codesigning identity matching "Apple Development:"
-#     (Han's enrollment under Dwarves Foundation, TeamIdentifier W777S7V8TN).
-#     Other dev identities are accepted as fallback.
-#   - Sign each target script if it exists and the identity is found.
-#   - Graceful no-op when the cert is absent (fresh Mac before 1P restore,
-#     Mini-side where the cert isn't installed yet).
-#   - Idempotent: signing an already-signed file with the same cert reproduces
-#     the same signature.
-#
-# Logs to ~/.cache/chezmoi-resign.log (one line per run).
-set -euo pipefail
+set -uo pipefail
 
-LOG="${HOME}/.cache/chezmoi-resign.log"
-mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
-
-log() {
-    printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*" >> "$LOG"
-}
-
-# Only run on macOS (codesign isn't on Linux)
+# Only run on macOS
 if [ "$(uname)" != "Darwin" ]; then
-    log "skip: not macOS"
     exit 0
 fi
 
-# Find an Apple Development identity if present
-IDENTITY_HASH=$(security find-identity -v -p codesigning ~/Library/Keychains/login.keychain-db 2>/dev/null \
-    | grep "Apple Development:" \
-    | head -1 \
-    | awk '{print $2}')
+# Resolve mac-sign: PATH first, then ops-toolkit canonical location.
+MAC_SIGN=""
+if command -v mac-sign >/dev/null 2>&1; then
+    MAC_SIGN=$(command -v mac-sign)
+elif [ -x "$HOME/workspace/tieubao/ops-toolkit/tools/mac-sign/bin/mac-sign" ]; then
+    MAC_SIGN="$HOME/workspace/tieubao/ops-toolkit/tools/mac-sign/bin/mac-sign"
+fi
 
-if [ -z "$IDENTITY_HASH" ]; then
-    log "skip: no Apple Development codesigning identity in login keychain"
+if [ -z "$MAC_SIGN" ]; then
+    # mac-sign not available on this host yet; skip silently. The chezmoi
+    # apply itself should not break because the helper tool isn't there.
     exit 0
 fi
 
-# Targets: chezmoi-managed personal scripts under ~/.local/bin/
-TARGETS=(
-    "$HOME/.local/bin/dotfiles-watcher-tick"
-    "$HOME/.local/bin/dotfiles-watcher-fswatch"
+# Glob personal user LaunchAgent plists; mac-sign reads ProgramArguments[0]
+# from each and signs the resulting path.
+shopt -s nullglob
+plists=(
+    "$HOME"/Library/LaunchAgents/com.truonghan.*.plist
+    "$HOME"/Library/LaunchAgents/mini.*.plist
 )
 
-signed=0
-skipped=0
-for target in "${TARGETS[@]}"; do
-    if [ ! -f "$target" ]; then
-        skipped=$((skipped + 1))
-        continue
-    fi
-    # Re-sign with --options runtime to match the original signing flags
-    if codesign --force --sign "$IDENTITY_HASH" --options runtime "$target" 2>/dev/null; then
-        signed=$((signed + 1))
-    else
-        log "fail: codesign returned non-zero on $target"
-    fi
-done
+if [ ${#plists[@]} -eq 0 ]; then
+    exit 0
+fi
 
-log "ok: signed=$signed skipped=$skipped identity=$IDENTITY_HASH"
+"$MAC_SIGN" sign --from-plists "${plists[@]}" >/dev/null 2>&1 || true
