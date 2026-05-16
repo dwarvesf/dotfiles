@@ -35,6 +35,25 @@
 #   "secret-guard-stop.sh"                       -- S-62 Stop: scan last
 #                                                   assistant message for
 #                                                   credential patterns; warn.
+#   "em-dash-guard.sh"                           -- block stop if the last
+#                                                   assistant message contains
+#                                                   a U+2014 em-dash outside
+#                                                   of code blocks. Han's hard
+#                                                   rule against em-dashes.
+#   "show-without-run-guard.sh"                  -- block stop if the turn
+#                                                   includes a fenced bash
+#                                                   code block but zero tool
+#                                                   calls. Catches "show and
+#                                                   wait" sycophancy.
+#
+# Managed PreToolUse hooks (in addition to legacy ones above):
+#   "heavy-tool-ladder.sh"                       -- one-shot-per-session
+#                                                   reminder when Claude
+#                                                   reaches for a browser or
+#                                                   macOS-GUI tool. Nudges
+#                                                   verification of lighter
+#                                                   rungs. Informational, not
+#                                                   blocking.
 #
 # Managed SessionStart hooks (keyed by unique marker):
 #   "machine-banner.sh"                          -- prints "Machine: user@host (model)"
@@ -97,11 +116,15 @@ echo "$INPUT" | jq \
             ((.hooks.Stop // []) | map(select(
                 (.hooks // []) | map(.command // "" as $c |
                     ($c | contains("LEARNING CAPTURE CHECK")) or
-                    ($c | contains("secret-guard-stop.sh"))
+                    ($c | contains("secret-guard-stop.sh")) or
+                    ($c | contains("em-dash-guard.sh")) or
+                    ($c | contains("show-without-run-guard.sh"))
                 ) | any | not
             ))) + [
                 {hooks: [{type: "command", command: $learning_cmd, timeout: 5}]},
-                {hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard-stop.sh", timeout: 10}]}
+                {hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard-stop.sh", timeout: 10}]},
+                {hooks: [{type: "command", command: "~/.claude/hooks/style-guard/em-dash-guard.sh", timeout: 5}]},
+                {hooks: [{type: "command", command: "~/.claude/hooks/style-guard/show-without-run-guard.sh", timeout: 5}]}
             ]
         ),
         PostToolUse: (
@@ -118,7 +141,8 @@ echo "$INPUT" | jq \
                     ($c | contains("solo-worker mode")) or
                     ($c | contains("BLOCKED: Pipe-to-shell detected")) or
                     ($c | contains("BLOCKED: Destructive delete")) or
-                    ($c | contains("secret-guard/secret-guard.sh"))
+                    ($c | contains("secret-guard/secret-guard.sh")) or
+                    ($c | contains("heavy-tool-ladder.sh"))
                 ) | any | not
             ))) + [
                 {matcher: "Bash", hooks: [{type: "command", command: $pipe_shell_block_cmd}]},
@@ -126,7 +150,8 @@ echo "$INPUT" | jq \
                 {matcher: "Bash", hooks: [{type: "command", command: $rm_rf_block_cmd}]},
                 {matcher: "Bash", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]},
                 {matcher: "Read", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]},
-                {matcher: "Edit|Write|MultiEdit", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]}
+                {matcher: "Edit|Write|MultiEdit", hooks: [{type: "command", command: "~/.claude/hooks/secret-guard/secret-guard.sh"}]},
+                {matcher: "mcp__claude-in-chrome__.*|mcp__chrome-devtools__.*|mcp__playwright.*|mcp__plugin_playwright.*|mcp__browserbase.*|mcp__plugin_browserbase.*|mcp__macos-use__.*|mcp__peekaboo__.*", hooks: [{type: "command", command: "~/.claude/hooks/style-guard/heavy-tool-ladder.sh", timeout: 3}]}
             ]
         ),
         SessionStart: (
