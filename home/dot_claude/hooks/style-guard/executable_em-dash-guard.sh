@@ -55,6 +55,7 @@ if printf '%s' "$STRIPPED" | grep -q '—'; then
     printf '[%s] [STYLE-EM-DASH] [%s] last assistant message contains em-dash\n' \
         "$(date -u +%FT%TZ)" "$SESSION_ID" >>"$LOG" 2>/dev/null
     {
+        echo
         echo "============= BLOCKED: em-dash in your last response ============="
         echo
         echo "Han's hard rule: NEVER use em dashes (—, U+2014) in responses."

@@ -91,6 +91,7 @@ if printf '%s' "$ANALYSIS" | head -1 | grep -q "^BLOCK$"; then
     printf '[%s] [STYLE-SHOW-NO-RUN] [%s] bash block emitted, no tool calls\n' \
         "$(date -u +%FT%TZ)" "$SESSION_ID" >>"$LOG" 2>/dev/null
     {
+        echo
         echo "============= BLOCKED: command shown but not run ============="
         echo
         echo "Your turn includes a fenced bash code block but you made zero"
