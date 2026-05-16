@@ -73,7 +73,16 @@ Background `#ffffff` or `#fafafa`; text `#111827`; lines/borders `#374151`; one 
 
 # Machines I work from
 
-The SessionStart hook prints `Machine: <user>@<localhostname> (<hw.model>)` so you always know which box you landed on. This table maps shorthand the user uses verbally to actual SSH targets.
+The SessionStart hook prints two lines so you always know which box this session is on:
+
+```
+Machine: <user>@<localhostname> (<hw.model>) [role=<short>]
+You are RUNNING ON this host. Do NOT ssh to: <aliases>. Run commands locally.
+```
+
+**The banner is a binding rule, not a hint.** Read it before any ssh attempt. If you'd be ssh-ing to a name that resolves to the banner's host, that's a bug; run locally. The single most common failure mode (and the reason the rule line exists) is starting an ssh to "the mini" from a session that's already on the Mini.
+
+The table below maps the user's verbal shorthand to actual SSH targets, for when you ARE on a different host and need to reach out:
 
 | Shorthand | Hostname / SSH alias | User | Role |
 |---|---|---|---|
@@ -86,9 +95,10 @@ The SessionStart hook prints `Machine: <user>@<localhostname> (<hw.model>)` so y
 
 Resolution rules:
 
-- "the mini" / "mac mini" -> `mini` if the work is daemon control, log tail, or `kickstart -k hermes-agent`. `mini-tieubao` if the work is broader `foundation.d.*` or `mini.*` manipulation (bootout, bootstrap, print on a non-hermes label) or needs `(server) ALL` run-as-server escalation.
-- "this machine" / "here" -> use whatever the SessionStart banner shows. If the banner contradicts the user's framing, surface the conflict before acting.
-- "from my phone" / "iphone" -> the SPEC-002 iOS pilot path: Termius + Mosh + Tailscale into `tieubao@mac-mini-danang`. The iOS Claude app's Cloud Sandbox is for stateless parallel work; the Mini is for anything needing MCP, `op://`, or Hermes-resident state.
+- **If the SessionStart banner shows host X with role R, you ARE on X.** Any ssh to a name that resolves to X (alias from the table, mDNS `<host>.local`, Tailscale FQDN, Tailscale IP) is a bug. Run locally. If the banner has aged out of context mid-session and you're unsure, run `claude-host` (~/.local/bin/claude-host); it prints role + hostname + Tailscale name + a "don't ssh here" reminder in one line.
+- "this machine" / "here" -> whatever the banner shows. If the user's framing contradicts the banner (they say "on the mini" but banner shows Air), surface the conflict before acting; do not assume one is right.
+- "the mini" / "mac mini" -> when you are NOT already on it: `mini` if the work is daemon control, log tail, or `kickstart -k hermes-agent`. `mini-tieubao` if the work is broader `foundation.d.*` or `mini.*` manipulation (bootout, bootstrap, print on a non-hermes label) or needs `(server) ALL` run-as-server escalation. When you ARE on it: just run locally.
+- "from my phone" / "iphone" -> the SPEC-002 iOS pilot path: Termius + Mosh + Tailscale into `tieubao@mac-mini-danang`. The session terminates ON the Mini, so the banner will read `tieubao@Mac-mini`; treat that as "you're on the Mini" per the rule above. The iOS Claude app's Cloud Sandbox is for stateless parallel work; the Mini is for anything needing MCP, `op://`, or Hermes-resident state.
 
 Mini namespaces: `foundation.d.*` are Dwarves daemons (`hermes-agent`, `hermes-insights-daily`, `ollama`; substrate per dfoundation SPEC-032 + ADR-0012). `mini.*` are personal daemons (`restic-backup`, `restic-check`, `upgrade-check`; per dfoundation ADR-0020 + SPEC-054, 2026-05-06 refined 2026-05-08). Both respond to `launchctl print system/<label>` from `tieubao@` per SPEC-052. Substrate + runbooks: `ops-toolkit/tools/{mac-mini-substrate,mac-backup}/`. `vps-mon-agent`: `ops-toolkit/tools/vps-mon/`. Mobile pilot architecture: ops-toolkit `_meta/SPEC-002-mobile-pilot-v0.md`.
 
