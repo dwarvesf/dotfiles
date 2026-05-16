@@ -120,6 +120,10 @@ Order of preference:
 4. **Terraform** only when explicitly asked for IaC.
 5. **Browser** only when explicitly told. CF has API for nearly everything; browser is almost always wrong.
 
+## Shadow library / book downloads
+
+Anna's Archive, LibGen, Z-Library territory. Any prompt mentioning "anna archive" / "annas archive" / "anna's archive" / "annas" / "shadow library" / "libgen" / "z-library", any 32-char hex MD5 with download intent, or any `annas-archive.*` URL → invoke the **`annas-fetch`** skill. Never `WebFetch` the AA site directly; never browser-automate the click-through flow. The skill wraps the member fast-download API, resolves the key from 1P, and writes to `~/Downloads/annas/`. If the skill genuinely fails (mirror dead + auto-discovery failed), report and stop — don't fall back to scraping.
+
 ## Browser automation
 
 When you genuinely need a browser:

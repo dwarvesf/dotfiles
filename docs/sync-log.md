@@ -6,6 +6,27 @@ context.
 
 ---
 
+## [2026-05-17] sync @ Hans Air M4 (learning-day skills + annas-fetch trigger expansion)
+
+Claude skills (core, home/dot_claude/skills/):
+  - added: learning-day-process — process class transcripts into 3-artifact output (Day-NN.md workbook + Day-NN-explained.md adaptive companion + GLOSSARY append) for any learning/<topic>/ track in ops-toolkit.
+  - added: concept-explain — auxiliary skill for "X là gì?" Q&A; GLOSSARY-aware (check before re-explain), 4-layer answer, propose save for cross-topic-value concepts.
+  - Both skills reference 2 memory files (`feedback_learning_tutoring_format` v3 adaptive + `feedback_propose_during_work`) saved into `~/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/memory/`. Memory files NOT synced to dotfiles (project-scoped, machine-specific by design).
+
+Anna's Archive trigger expansion:
+  - home/dot_claude/skills/annas-fetch/SKILL.md: description adds bare-string triggers ("anna archive", "annas archive", "anna's archive", "annas-archive", "annas", "shadow library", "libgen", "library genesis", "z-library", "via anna archive", "search anna for", "search for ... on anna").
+  - home/dot_claude/modify_CLAUDE.md.tmpl: new "Shadow library / book downloads" section in tool-selection. Explicit anti-pattern: don't WebFetch AA, don't browser-automate. Skill is the only path.
+
+Deferred (NOT in this commit, surface next sync):
+  - 7 untracked Claude skills: bot-reply-formatting, cashflow-append, cashflow-correct, cashflow-report. Need classification (core/local/skip) — these exist on disk but were never tracked.
+  - 9 untracked symlink_* entries: chezmoi attribute names for symlinked skills (content-spec, knowledge-capture, prompt-improver, reel-transcript, skill-export, skill-import, skill-sync, twitter-capture, youtube-capture). Probably need a separate sync session focused on the symlink batch.
+
+Notify-only context:
+  - S-64 watcher: running, absorbing managed-file drift in real-time. New skills under `~/.claude/skills/` were auto-mirrored to chezmoi source within seconds of `Write`.
+  - No push to origin/main per Han's choice. Commit stays local.
+
+---
+
 ## [2026-05-16] sync @ Hans Air M4 (untracked-brew classification + SA cache refresh)
 
 Brewfile (core, home/dot_Brewfile.tmpl):
