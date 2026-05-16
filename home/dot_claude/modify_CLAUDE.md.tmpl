@@ -80,7 +80,7 @@ Machine: <user>@<localhostname> (<hw.model>) [role=<short>]
 You are RUNNING ON this host. Do NOT ssh to: <aliases>. Run commands locally.
 ```
 
-**The banner is a binding rule, not a hint.** Read it before any ssh attempt. If you'd be ssh-ing to a name that resolves to the banner's host, that's a bug — run locally. The single most common failure mode (and the reason the rule line exists) is starting an ssh to "the mini" from a session that's already on the Mini.
+**The banner is a binding rule, not a hint.** Read it before any ssh attempt. If you'd be ssh-ing to a name that resolves to the banner's host, that's a bug; run locally. The single most common failure mode (and the reason the rule line exists) is starting an ssh to "the mini" from a session that's already on the Mini.
 
 The table below maps the user's verbal shorthand to actual SSH targets, for when you ARE on a different host and need to reach out:
 
