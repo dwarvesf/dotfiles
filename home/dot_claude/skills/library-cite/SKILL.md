@@ -3,7 +3,7 @@ name: library-cite
 description: Use when Han wants book-grounded answers within a learning track. Trigger phrases include "what does <book> say about X?", "Wong has X?", "show me Mermin Ch N", "cite a book on X", "any book covers X?", "đoạn nào trong <book> nói về X?", "give me the figure from <book> chapter N", or any case where Han mentions a book by author/title and asks for excerpt, page-pointer, or figure. EPUB books are searched headless via `unzip -p '*.xhtml' | grep` (no pre-conversion needed). PDF books are read native via Read tool's `pages` parameter (figures + text in one view). Images extracted on-demand to `learning/library/_assets/<book-slug>/<chapter>/`. Excerpts quoted 3-5 sentences inline, cited `Author (Year), §X.Y`. GUI fallback: Apple Books (`open <book>.epub`). NOT for downloading books (use annas-fetch). NOT for full-book summary. NOT for non-learning-context questions.
 ---
 
-# Library Cite (v2)
+# Library Cite
 
 Book-grounded excerpt + figure retrieval for any `learning/<topic>/` track. EPUB books are searched directly via unzip+grep (no intermediate markdown file). PDF books use Read tool's native `pages` parameter. Images extracted on demand. Citation inline.
 
@@ -153,7 +153,7 @@ End of response:
 
 ## Anti-patterns
 
-1. **Default pre-conversion to markdown**: v1 anti-pattern. Han pushback: "if we don't have to convert to text md, will be better". Use unzip+grep on the fly. Pandoc fallback only.
+1. **Default pre-conversion to markdown**: anti-pattern. Use unzip+grep on the fly. Pandoc fallback only.
 2. **Quote >5 sentences**: respect copyright + reader attention.
 3. **No citation**: every excerpt MUST cite.
 4. **Skip index update**: missing growth opportunity.
@@ -164,7 +164,7 @@ End of response:
 
 - Library home: `~/workspace/tieubao/ops-toolkit/learning/library/`
 - Library README: `learning/library/README.md`
-- Reference index file: `learning/library/wong-quantum-2023.md` (canonical example of v2 format with XHTML references).
+- Reference index file: `learning/library/wong-quantum-2023.md` (canonical example with XHTML references).
 - Image assets: `learning/library/_assets/<slug>/ch<N>/` (gitignored, on-demand cache).
 - Companion skills:
   - `annas-fetch`: download books into `~/Downloads/annas/`.
