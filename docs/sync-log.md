@@ -6,6 +6,53 @@ context.
 
 ---
 
+## [2026-05-17] sync @ Hans Air M4 (library-cite skill v2: no-conversion EPUB + on-demand images)
+
+Claude skills (core):
+  - added: library-cite v2 — book-grounded excerpt + figure retrieval. EPUB headless search via `unzip -p '*.xhtml' | grep` (~0.01s on 30 MB book, no markdown pre-conversion). Images extracted on-demand to `learning/library/_assets/<slug>/`. PDF books via Read tool's native `pages` parameter (figures + text in one view). GUI fallback: Apple Books (`open <book.epub>`). Pandoc conversion still available as fallback when XHTML obfuscated or grep returns too many hits.
+
+Design notes:
+  - v1 (earlier today) required pandoc conversion to 2 MB markdown intermediate. Han pushback: "if we don't have to convert to text md, will be better". v2 drops conversion as default.
+  - Image extraction: on-demand per query, cached in `_assets/` (gitignored). Tested with Wong (2023) Ch 19 no-cloning theorem proof equations — 5 PNGs extracted, including the linearity-argument equation that's the proof core.
+  - GUI fallback: chose Apple Books (built-in, no install) over Calibre ebook-viewer (better but optional).
+
+Library data (NOT in dotfiles; in ops-toolkit repo):
+  - `learning/library/wong-quantum-2023.md`: Wong book index, refactored v2 (XHTML chapter references, image extraction snippets).
+  - `learning/library/README.md`: cross-track library architecture doc, refactored v2 (no-conversion-default).
+  - `learning/library/.gitignore`: extended to cover `_assets/` (on-demand images) and `_text/` (optional pandoc fallback output).
+  - 2 MB pandoc-converted markdown intermediate moved to `/tmp/wong-md-obsolete-*` (no longer needed).
+
+Deferred (NOT in this commit, surface next sync):
+  - 4 untracked Claude skills: bot-reply-formatting, cashflow-{append,correct,report} (pre-existing from earlier sessions).
+  - 9 untracked symlink_* entries (pre-existing).
+
+Notify-only:
+  - Watcher detected library-cite/ but initially absorbed v1 description. Force-synced v2 with `\cp`. Worth investigating why watcher missed the second-write update.
+  - No push to origin/main per Han's pattern. Commit stays local.
+
+---
+
+## [2026-05-17] sync @ Hans Air M4 (learning-day skills + annas-fetch trigger expansion)
+
+Claude skills (core, home/dot_claude/skills/):
+  - added: learning-day-process — process class transcripts into 3-artifact output (Day-NN.md workbook + Day-NN-explained.md adaptive companion + GLOSSARY append) for any learning/<topic>/ track in ops-toolkit.
+  - added: concept-explain — auxiliary skill for "X là gì?" Q&A; GLOSSARY-aware (check before re-explain), 4-layer answer, propose save for cross-topic-value concepts.
+  - Both skills reference 2 memory files (`feedback_learning_tutoring_format` v3 adaptive + `feedback_propose_during_work`) saved into `~/.claude/projects/-Users-tieubao-workspace-tieubao-ops-toolkit/memory/`. Memory files NOT synced to dotfiles (project-scoped, machine-specific by design).
+
+Anna's Archive trigger expansion:
+  - home/dot_claude/skills/annas-fetch/SKILL.md: description adds bare-string triggers ("anna archive", "annas archive", "anna's archive", "annas-archive", "annas", "shadow library", "libgen", "library genesis", "z-library", "via anna archive", "search anna for", "search for ... on anna").
+  - home/dot_claude/modify_CLAUDE.md.tmpl: new "Shadow library / book downloads" section in tool-selection. Explicit anti-pattern: don't WebFetch AA, don't browser-automate. Skill is the only path.
+
+Deferred (NOT in this commit, surface next sync):
+  - 7 untracked Claude skills: bot-reply-formatting, cashflow-append, cashflow-correct, cashflow-report. Need classification (core/local/skip) — these exist on disk but were never tracked.
+  - 9 untracked symlink_* entries: chezmoi attribute names for symlinked skills (content-spec, knowledge-capture, prompt-improver, reel-transcript, skill-export, skill-import, skill-sync, twitter-capture, youtube-capture). Probably need a separate sync session focused on the symlink batch.
+
+Notify-only context:
+  - S-64 watcher: running, absorbing managed-file drift in real-time. New skills under `~/.claude/skills/` were auto-mirrored to chezmoi source within seconds of `Write`.
+  - No push to origin/main per Han's choice. Commit stays local.
+
+---
+
 ## [2026-05-16] sync @ Hans Air M4 (untracked-brew classification + SA cache refresh)
 
 Brewfile (core, home/dot_Brewfile.tmpl):

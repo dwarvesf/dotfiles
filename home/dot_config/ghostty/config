@@ -1,13 +1,14 @@
 # Ghostty Configuration
 # https://ghostty.org/docs/config
 
-# Font
+# Font (matched to Warp: SauceCodePro Nerd Font, 13px, line-height ~1.1, ligatures ON)
+# To restore pre-2026-05-18 defaults: font-size=12, font-thicken=true, drop adjust-cell-height.
 font-family = SauceCodePro Nerd Font
-font-size = 12
-font-thicken = true
+font-size = 13
+adjust-cell-height = 10%
 
-# Theme (matches Terminal.app base16-eighties.dark)
-theme = base16-eighties-dark
+# Theme (Warp's Adeberry, extracted from running Warp via pty-paint + screencap pixel-pick)
+theme = adeberry
 
 # Window
 window-padding-x = 8
