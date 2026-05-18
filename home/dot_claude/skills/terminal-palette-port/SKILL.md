@@ -23,7 +23,7 @@ displayed colors.
   source's own themes repo). Cite-and-copy.
 - The user can paste a 1-liner in the source terminal. Use the OSC-query script (see
   *Faster path* below) instead of this whole chain.
-- No Screen Recording grant — `screencapture -x` will fail; ask the user to grant it.
+- No Screen Recording grant - `screencapture -x` will fail; ask the user to grant it.
 
 ## Faster path (try first; falls through to main chain if blocked)
 
@@ -118,7 +118,7 @@ screencapture -x /tmp/palette.png
 ### 4. Pixel-pick via PIL
 
 ```python
-# /tmp/pick.py — invoke via: uv run --with pillow python3 /tmp/pick.py /tmp/palette.png
+# /tmp/pick.py - invoke via: uv run --with pillow python3 /tmp/pick.py /tmp/palette.png
 import sys
 from PIL import Image
 from collections import Counter
@@ -142,7 +142,7 @@ for s, e, p, bk in cand:
         print(f"background = #{p[0]:02x}{p[1]:02x}{p[2]:02x}"); break
 ```
 
-Expect 16 bar lines + 1 bg line. If count is wrong, leftover output is in scrollback —
+Expect 16 bar lines + 1 bg line. If count is wrong, leftover output is in scrollback -
 re-do step 3 with a fresh `\e[2J\e[H`.
 
 ### 5. Foreground sample
@@ -179,7 +179,7 @@ printf '\e[0m\e[2J\e[H' > /dev/$TTY
 | Looking for the theme yaml in `~/.<source>/themes/` for a bundled theme | That directory only has user-created themes. Bundled ones live in the binary. |
 | Trying `osascript ... keystroke "bash /tmp/..."` to drive the source | TCC denies for `claude` (error 1002). Don't retry the same call; pivot to pty-paint. |
 | Trying `mcp__computer-use__type` into a terminal | Terminals are tier-"click"; typing blocked. Same wall as osascript. |
-| Writing to source's pty slave to *inject input* to the shell | Slave-side write reaches the OUTPUT stream, not shell stdin. TIOCSTI is dead on modern macOS. But it DOES paint the terminal — that's exactly what we want. |
+| Writing to source's pty slave to *inject input* to the shell | Slave-side write reaches the OUTPUT stream, not shell stdin. TIOCSTI is dead on modern macOS. But it DOES paint the terminal - that's exactly what we want. |
 | Painting 3+ lines per bar | Pattern overflows visible area; bars scroll out the top. Use 1 line per bar so all 16 + markers + fg-row fit. |
 | Sampling pixels at the leftmost column | You'll hit the `P##` label text, not the bar fill. Sample at `W * 0.65`. |
 | Forgetting to clear before painting | Leftover pattern from prior run produces extra runs; pixel-picker counts more than 16 bars. Always lead with `\e[2J\e[H`. |
