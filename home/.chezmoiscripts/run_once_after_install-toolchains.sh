@@ -55,14 +55,16 @@ fi
 
 # Global uv tools
 if command -v uv &>/dev/null; then
-    if ! uv tool list 2>/dev/null | grep -q "^llm "; then
-        info "uv: installing llm"
-        if ! uv tool install llm 2>/dev/null; then
-            warn "uv: failed to install llm" \
-                 "Package may be unavailable or network error." \
-                 "uv tool install llm"
+    for pkg in llm jupyterlab jupytext gdown ouroboros-ai; do
+        if ! uv tool list 2>/dev/null | grep -q "^$pkg "; then
+            info "uv: installing $pkg"
+            if ! uv tool install "$pkg" 2>/dev/null; then
+                warn "uv: failed to install $pkg" \
+                     "Package may be unavailable or network error." \
+                     "uv tool install $pkg"
+            fi
         fi
-    fi
+    done
 fi
 
 script_ok "toolchains"
